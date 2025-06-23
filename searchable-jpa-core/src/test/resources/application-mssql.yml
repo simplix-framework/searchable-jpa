@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    # MSSQL database configuration
+    url: jdbc:sqlserver://localhost:1433;databaseName=testDB;encrypt=false;trustServerCertificate=true
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    username: sa
+    password: Password123!
+    hikari:
+      auto-commit: false
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        # Batch processing optimizations
+        jdbc:
+          batch_size: 1000
+          batch_versioned_data: true
+        order_inserts: true
+        order_updates: true
+        # N+1 problem optimization
+        default_batch_fetch_size: 100
+        # Connection pool settings
+        connection:
+          provider_disables_autocommit: true
+        # Query optimization
+        query:
+          in_clause_parameter_padding: true
+        # Cache settings
+        cache:
+          use_second_level_cache: false
+          use_query_cache: false
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql: DEBUG
+    org.springframework.orm.jpa: DEBUG
+    dev.simplecore.searchable: DEBUG
+
+searchable:
+  swagger:
+    enabled: true 
