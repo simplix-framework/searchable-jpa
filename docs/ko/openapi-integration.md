@@ -1,6 +1,6 @@
 # OpenAPI 통합
 
-Searchable JPA는 OpenAPI 3.0 및 Swagger UI와의 완벽한 통합을 제공합니다. 검색 API에 대한 문서를 자동으로 생성하고, 인터랙티브한 API 테스트 환경을 제공합니다.
+Searchable JPA는 OpenAPI 3.0과 Swagger UI를 지원합니다. 검색 API 문서를 자동으로 생성하고, 대화형 API 테스트 환경을 제공합니다.
 
 ## 설정
 
@@ -61,7 +61,7 @@ searchable:
 
 ## @SearchableParams 어노테이션
 
-`@SearchableParams` 어노테이션을 사용하여 GET 방식 검색 파라미터에 대한 OpenAPI 문서를 자동 생성할 수 있습니다.
+`@SearchableParams` 어노테이션을 사용하면 GET 방식 검색 파라미터의 OpenAPI 문서를 자동으로 생성합니다.
 
 ### 기본 사용법
 
@@ -84,7 +84,7 @@ public class PostController {
 
 ### 생성되는 문서
 
-위 코드는 다음과 같은 OpenAPI 문서를 자동 생성합니다:
+위 코드는 다음과 같은 OpenAPI 문서를 자동으로 생성합니다:
 
 ```yaml
 /api/posts/search:
@@ -94,79 +94,88 @@ public class PostController {
     parameters:
       - name: id.equals
         in: query
-        description: Post id (equals)
+        description: Post id - equals
         required: false
         schema:
           type: integer
           format: int64
-          example: 1
       - name: searchTitle.equals
         in: query
-        description: Post title to search (equals)
+        description: Post title to search - equals
         required: false
         schema:
           type: string
-          maxLength: 100
-          example: "Welcome to my blog"
       - name: searchTitle.contains
         in: query
-        description: Post title to search (contains)
+        description: Post title to search - contains
         required: false
         schema:
           type: string
-          maxLength: 100
-          example: "Spring"
       - name: status.equals
         in: query
-        description: Post status (equals)
+        description: Post status - equals
+        required: false
+        schema:
+          $ref: '#/components/schemas/PostStatus'
+      - name: status.in
+        in: query
+        description: Post status - in
         required: false
         schema:
           type: string
+          description: Enter multiple values separated by comma
           enum: [PUBLISHED, DRAFT, DELETED]
-          example: "PUBLISHED"
       - name: viewCount.greaterThan
         in: query
-        description: Number of views (greater than)
+        description: Number of views - greaterThan
         required: false
         schema:
           type: integer
           format: int64
-          example: 100
       - name: createdAt.between
         in: query
-        description: Post creation date and time (between)
+        description: Post creation date and time - between
         required: false
         schema:
           type: string
-          format: date-time
-          example: "2024-01-01T00:00:00,2024-12-31T23:59:59"
+          description: Enter two values separated by comma
       - name: sort
         in: query
-        description: Sort criteria
+        description: >-
+          Sort fields (e.g., field.asc or field.desc).
+          Available fields: searchTitle, viewCount, createdAt
         required: false
+        explode: true
         schema:
           type: array
           items:
             type: string
-            example: "createdAt,desc"
       - name: page
         in: query
         description: Page number (0-based)
         required: false
+        example: 0
         schema:
           type: integer
+          format: int32
           minimum: 0
-          example: 0
       - name: size
         in: query
-        description: Page size
+        description: Items per page
         required: false
+        example: 20
         schema:
           type: integer
+          format: int32
           minimum: 1
-          maximum: 100
-          example: 10
+components:
+  schemas:
+    PostStatus:
+      type: string
+      enum: [PUBLISHED, DRAFT, DELETED]
 ```
+
+파라미터 설명은 필드 설명과 연산자 이름을 `-`로 이어 붙인 형식입니다(예: `Post id - equals`). Enum 타입 필드(`status`)는 별도 스키마로 등록되고, 파라미터는 그 스키마를 `$ref`로 참조합니다. `sort` 파라미터는 `explode: true`로 각 정렬 값을 개별 파라미터로 전달합니다. `page`와 `size`에만 파라미터 자체에 `example`이 붙고, 나머지 검색 필드 파라미터에는 예제 값이 없습니다.
 
 ## 고급 문서화
 
@@ -174,41 +183,30 @@ public class PostController {
 
 ```java
 public class PostSearchDTO {
-    
-    @Schema(
-        description = "게시글 ID",
-        example = "1",
-        minimum = "1"
-    )
+
+    @Schema(description = "게시글 ID")
     @SearchableField(operators = {EQUALS})
     private Long id;
-    
-    @Schema(
-        description = "검색할 게시글 제목",
-        example = "Spring Boot Tutorial",
-        maxLength = 100
-    )
+
+    @Schema(description = "검색할 게시글 제목")
     @Size(max = 100, message = "제목은 100자를 초과할 수 없습니다")
     @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true)
     private String title;
-    
-    @Schema(
-        description = "게시글 상태",
-        example = "PUBLISHED",
-        allowableValues = {"PUBLISHED", "DRAFT", "DELETED"}
-    )
+
+    @Schema(description = "게시글 상태")
     @SearchableField(operators = {EQUALS, NOT_EQUALS, IN, NOT_IN})
     private PostStatus status;
-    
-    @Schema(
-        description = "조회수 범위",
-        example = "100",
-        minimum = "0"
-    )
+
+    @Schema(description = "조회수 범위")
     @SearchableField(operators = {GREATER_THAN, LESS_THAN, BETWEEN})
     private Long viewCount;
 }
 ```
+
+> [!NOTE]
+> 필드마다 GET 검색 파라미터 스키마를 새로 만들고, `@Schema`의 `description`만 그대로 반영합니다. `minimum`, `maxLength`, `example`은 GET 파라미터 스키마에 나타나지 않습니다 — `title`의 `@Size(max = 100)`도 런타임 검증에는 적용되지만 생성된 파라미터 스키마에는 나타나지 않습니다.
+>
+> `@Schema(allowableValues = ...)`와 `implementation`은 필드 타입이 `String`일 때만 읽습니다. `status`처럼 실제 Enum 타입 필드는 이 속성 없이도 Enum 상수를 그대로 읽어 값 목록을 만들므로, `PostStatus`의 허용 값은 `PUBLISHED`, `DRAFT`, `DELETED`로 표시됩니다.
 
 ### 2. 커스텀 예제 생성
 
@@ -236,6 +234,49 @@ public class CustomOpenApiConfig {
     }
 }
 ```
+
+> [!WARNING]
+> 이 설정을 `GroupedOpenApi`와 함께 사용하면 `OperationCustomizer` 빈이 `searchConditionCustomizer`와 `customOperationCustomizer` 두 개가 됩니다. `GroupedOpenApi` 빈이 단일 `OperationCustomizer`를 자동 주입받도록 작성돼 있으면 "required a single bean, but 2 were found" 오류가 발생합니다. 해결 방법은 아래 "GroupedOpenApi 사용 시 주의사항"을 참고하세요.
+
+### 3. GroupedOpenApi 사용 시 주의사항
+
+`GroupedOpenApi`는 격리된 API 그룹을 만들기 때문에 전역으로 등록된 `OperationCustomizer` 빈을 자동으로 적용받지 않습니다. `SearchableOpenApiConfiguration`이 등록하는 `searchConditionCustomizer` 빈도 마찬가지이므로, `GroupedOpenApi`에 명시적으로 연결하지 않으면 검색 파라미터 문서가 조용히 사라집니다.
+
+1. **`@Qualifier`로 지정**
+
+```java
+@Bean
+public GroupedOpenApi postApi(
+        @Qualifier("searchConditionCustomizer") OperationCustomizer searchConditionCustomizer) {
+    return GroupedOpenApi.builder()
+            .group("post-api")
+            .pathsToMatch("/api/posts/**")
+            .addOperationCustomizer(searchConditionCustomizer)
+            .build();
+}
+```
+
+2. **`List<OperationCustomizer>` 전체 주입**
+
+```java
+@Bean
+public GroupedOpenApi postApi(List<OperationCustomizer> customizers) {
+    GroupedOpenApi.Builder builder = GroupedOpenApi.builder()
+            .group("post-api")
+            .pathsToMatch("/api/posts/**");
+
+    customizers.forEach(builder::addOperationCustomizer);
+
+    return builder.build();
+}
+```
+
+> [!WARNING]
+> `OperationCustomizer` 빈이 여러 개 등록된 상태에서 `GroupedOpenApi` 빈이 `@Qualifier` 없이 단일 `OperationCustomizer` 파라미터로 자동 주입받으면, springdoc은 "required a single bean, but 2 were found" 오류를 던집니다. `@Qualifier("searchConditionCustomizer")`로 원하는 빈을 지정하거나 `List<OperationCustomizer>`로 전체를 주입해 해결합니다.
+
+![OpenAPI 커스터마이저 연결 구조](_images/openapi-customizer-wiring.svg)
+
+*searchConditionCustomizer 빈이 등록되어 springdoc 전역 OperationCustomizer로 적용되는 과정과, GroupedOpenApi에서 별도로 주입해야 하는 이유*
 
 ## POST 방식 검색 문서화
 
@@ -374,7 +415,7 @@ public class PostPageResponse {
 }
 ```
 
-2단계 쿼리 최적화는 내부 실행 방식이므로 응답 구조는 위 표준 페이징 응답과 동일하다. 별도의 응답 스키마가 필요하지 않다.
+2단계 쿼리 최적화는 내부 실행 방식이므로 응답 구조는 위 표준 페이징 응답과 동일합니다. 별도의 응답 스키마가 필요하지 않습니다.
 
 ## 에러 응답 문서화
 
@@ -448,7 +489,7 @@ public class PostController {
 }
 ```
 
-2단계 쿼리 최적화는 모든 검색 쿼리에 자동으로 적용되므로 별도의 엔드포인트가 필요하지 않다.
+2단계 쿼리 최적화는 모든 검색 쿼리에 자동으로 적용되므로 별도의 엔드포인트가 필요하지 않습니다.
 
 ## 보안 문서화
 
@@ -551,4 +592,4 @@ public class OpenApiConfig {
 ## 다음 단계
 
 - [API 레퍼런스](api-reference.md) - 전체 API 문서
-- [FAQ](faq.md) - 자주 묻는 질문들 
+- [FAQ](faq.md) - 자주 묻는 질문

@@ -1,10 +1,45 @@
 # 고급 기능
 
-이 문서는 Searchable JPA의 고급 기능들을 설명합니다.
+이 문서는 Searchable JPA의 고급 기능을 설명합니다.
+
+## 다른 베이스 클래스를 상속해야 하는 경우
+
+이 문서와 기본 사용법 문서의 서비스 예제는 모두 `DefaultSearchableService`를 상속하는 방식을 사용합니다. 그런데 서비스 클래스가 이미 다른 베이스 클래스를 상속하고 있어 `DefaultSearchableService`를 상속할 수 없는 경우가 있습니다. 이때는 `SearchableServiceSupport` 인터페이스와 `SearchableServiceDelegate`를 조합해 동일한 검색 기능을 컴포지션 방식으로 구현합니다.
+
+`SearchableServiceDelegate`는 `SearchableService`의 모든 메서드 구현을 캡슐화한 독립 클래스이고, `SearchableServiceSupport`는 이 델리게이트에 위임하는 기본 메서드를 제공하는 믹스인 인터페이스입니다. `DefaultSearchableService` 자체도 내부적으로 `SearchableServiceDelegate`에 위임하는 `SearchableServiceSupport` 구현체입니다.
+
+```java
+@Service
+public class PostService extends SomeOtherBaseClass
+        implements SearchableServiceSupport<Post, Long> {
+
+    private final SearchableServiceDelegate<Post, Long> searchableDelegate;
+
+    public PostService(PostRepository repository, EntityManager entityManager) {
+        this.searchableDelegate = new SearchableServiceDelegate<>(repository, entityManager, Post.class);
+    }
+
+    @Override
+    public SearchableServiceDelegate<Post, Long> getSearchableDelegate() {
+        return searchableDelegate;
+    }
+}
+```
+
+`repository`는 `JpaRepository`와 `JpaSpecificationExecutor`를 함께 구현해야 합니다. 이 조건을 만족하지 않으면 `SearchableServiceDelegate` 생성 시점에 예외가 발생합니다.
+
+`PostService`는 `DefaultSearchableService`를 상속한 서비스와 동일한 방식으로 호출합니다.
+
+```java
+Page<Post> result = postService.findAllWithSearch(condition);
+long updatedCount = postService.updateWithSearch(condition, updateData);
+```
+
+인터페이스 구현 없이 `SearchableServiceDelegate` 인스턴스를 직접 생성해 메서드를 호출하는 방식도 지원합니다.
 
 ## 프로젝션(Projection) 지원
 
-엔티티의 일부 필드만 조회하고 싶을 때 인터페이스 기반 프로젝션을 사용할 수 있습니다.
+엔티티 필드 일부만 조회하려면 인터페이스 기반 프로젝션을 사용합니다.
 
 ### 인터페이스 기반 프로젝션
 
@@ -63,7 +98,7 @@ public Page<?> getDynamicSummaries(
 
 ## 배치 업데이트
 
-검색 조건에 맞는 여러 엔티티를 한 번에 업데이트할 수 있습니다.
+검색 조건에 맞는 여러 엔티티를 한 번에 업데이트합니다.
 
 ### 업데이트 DTO
 
@@ -80,13 +115,20 @@ public class PostUpdateDTO {
 
 ### 배치 업데이트 실행
 
+Spring MVC는 요청 본문을 한 번만 읽으므로, 검색 조건과 수정할 값을 각각 별도의 `@RequestBody` 파라미터로는 받을 수 없습니다. 두 값을 하나의 요청 DTO로 감쌉니다.
+
+```java
+public class BatchUpdateRequest {
+    private SearchCondition<PostSearchDTO> searchCondition;
+    private PostUpdateDTO updateData;
+    // getters and setters
+}
+```
+
 ```java
 @PutMapping("/batch-update")
-public ResponseEntity<Long> batchUpdate(
-    @RequestBody SearchCondition<PostSearchDTO> searchCondition,
-    @RequestBody PostUpdateDTO updateData
-) {
-    long updatedCount = postService.updateWithSearch(searchCondition, updateData);
+public ResponseEntity<Long> batchUpdate(@RequestBody BatchUpdateRequest request) {
+    long updatedCount = postService.updateWithSearch(request.getSearchCondition(), request.getUpdateData());
     return ResponseEntity.ok(updatedCount);
 }
 ```
@@ -117,7 +159,7 @@ public class PostService extends DefaultSearchableService<Post, Long> {
 
 ```bash
 # 특정 조건의 게시글 상태를 일괄 변경
-POST /api/posts/batch-update
+PUT /api/posts/batch-update
 Content-Type: application/json
 
 {
@@ -146,7 +188,7 @@ Content-Type: application/json
 
 ## 배치 삭제
 
-검색 조건에 맞는 여러 엔티티를 한 번에 삭제할 수 있습니다.
+검색 조건에 맞는 여러 엔티티를 한 번에 삭제합니다.
 
 ### 기본 배치 삭제
 
@@ -189,7 +231,7 @@ public class PostService extends DefaultSearchableService<Post, Long> {
 
 ## 동적 정렬
 
-검색 조건과 함께 동적으로 정렬 조건을 지정할 수 있습니다.
+검색 조건과 함께 정렬 조건을 동적으로 지정합니다.
 
 ### 다중 필드 정렬
 
@@ -247,9 +289,9 @@ public class PostService extends DefaultSearchableService<Post, Long> {
         if (sortField != null && sortDirection != null) {
             builder = builder.sort(sort -> {
                 if ("ASC".equalsIgnoreCase(sortDirection)) {
-                    return sort.asc(sortField);
+                    sort.asc(sortField);
                 } else {
-                    return sort.desc(sortField);
+                    sort.desc(sortField);
                 }
             });
         }
@@ -262,7 +304,7 @@ public class PostService extends DefaultSearchableService<Post, Long> {
 
 ## 중첩 필드 검색
 
-연관 엔티티의 필드로 검색할 수 있습니다.
+연관 엔티티의 필드로 검색합니다.
 
 ### 깊은 중첩 필드 검색
 
@@ -311,15 +353,13 @@ public Page<Post> advancedSearch(
 }
 ```
 
-
-
 ## 기존 검색 조건 확장
 
-기존 `SearchCondition` 객체를 기반으로 새로운 조건을 추가할 수 있습니다. 이 기능은 불변성을 유지하면서 검색 조건을 재사용하고 확장하는 데 유용합니다.
+기존 `SearchCondition` 객체를 기반으로 새 조건을 추가합니다. 원본 객체는 그대로 두고 검색 조건을 재사용하거나 확장할 때 사용합니다.
 
 ### from() 팩토리 메서드
 
-`SearchConditionBuilder.from()` 메서드를 사용하여 기존 검색 조건을 복사하고 새 조건을 추가할 수 있습니다.
+`SearchConditionBuilder.from()` 메서드는 기존 검색 조건을 복사하고 새 조건을 추가합니다.
 
 ```java
 // 기본 검색 조건 생성
@@ -339,6 +379,46 @@ SearchCondition<PostSearchDTO> extendedCondition = SearchConditionBuilder
 
 // baseCondition은 변경되지 않음 (불변성 유지)
 ```
+
+### AND/OR 조건 결합 순서
+
+`SearchConditionBuilder`의 `where()`, `and()`, `or()`는 호출한 순서대로 조건 노드를 쌓습니다. 최종 `Predicate`는 이 노드 목록을 왼쪽에서 오른쪽으로 접어가며(fold) 만들고, 각 노드는 자신에게 지정된 연산자(AND/OR)로 그때까지 누적된 결과와 결합됩니다. 목록의 첫 노드에는 연산자가 없습니다.
+
+```java
+SearchCondition<PostSearchDTO> condition = SearchConditionBuilder
+    .create(PostSearchDTO.class)
+    .where(w -> w.equals("status", "PUBLISHED"))     // a
+    .and(a -> a.equals("authorId", currentUserId))    // b (AND)
+    .or(o -> o.equals("visibility", "PUBLIC"))         // c (OR)
+    .build();
+```
+
+이 호출은 노드 목록 `[a, b(AND), c(OR)]`를 만들고, 다음 순서로 접습니다.
+
+```
+result = a
+result = result AND b
+result = result OR c
+```
+
+최종 조건은 `(a AND b) OR c`이며, `a AND (b OR c)`가 아닙니다. `b`와 `c`를 하나로 묶어 `a AND (b OR c)`를 표현하려면 `or()`를 최상위에 별도로 두지 말고, 하나의 `and()` 호출 안에 중첩합니다.
+
+```java
+SearchCondition<PostSearchDTO> condition = SearchConditionBuilder
+    .create(PostSearchDTO.class)
+    .where(w -> w.equals("status", "PUBLISHED"))              // a
+    .and(a -> a
+        .equals("authorId", currentUserId)                     // b
+        .or(o -> o.equals("visibility", "PUBLIC"))              // c, and() 안에 중첩
+    )
+    .build();
+```
+
+이렇게 중첩하면 `b`와 `c`가 하나의 그룹으로 묶여 `a AND (b OR c)`가 됩니다.
+
+![AND/OR 조건 그룹 평가 순서](_images/condition-group-evaluation.svg)
+
+*그림. `.where(a).and(b).or(c)` 호출이 노드 목록 `[a, b(AND), c(OR)]`로 쌓이고 좌에서 우로 접혀 `(a AND b) OR c`가 되는 과정*
 
 ### 실용적인 활용 사례
 
@@ -379,12 +459,7 @@ public class PostService extends DefaultSearchableService<Post, Long> {
         SearchConditionBuilder<PostSearchDTO> builder = SearchConditionBuilder
             .from(baseCondition, PostSearchDTO.class);
 
-        // 관리자가 아닌 경우 자신의 게시글만 조회
-        if (!currentUser.isAdmin()) {
-            builder = builder.and(a -> a.equals("authorId", currentUser.getId()));
-        }
-
-        // 비공개 게시글 제외 (소유자가 아닌 경우)
+        // 관리자가 아니면 다른 사용자의 비공개 게시글은 제외 (본인 게시글은 공개 여부와 무관하게 조회)
         if (!currentUser.isAdmin()) {
             builder = builder.and(a -> a
                 .notEquals("visibility", "PRIVATE")
@@ -427,7 +502,7 @@ public class PostController {
 
 ### 정렬 및 페이징 오버라이드
 
-기존 조건의 정렬이나 페이징을 변경할 수 있습니다.
+기존 조건의 정렬이나 페이징을 변경합니다.
 
 ```java
 // 기존 조건
@@ -461,44 +536,55 @@ SearchCondition<PostSearchDTO> withNewPage = SearchConditionBuilder
 
 ## 다국어 지원
 
-검색 조건의 에러 메시지를 다국어로 제공할 수 있습니다.
+라이브러리 내부 검증 오류 메시지는 `MessageUtils`가 조회합니다. 기본 제공 번들(`messages/message.properties`, `messages/message_ko.properties`)에 로케일별 문구가 들어 있고, 요청 로케일은 `LocaleContextHolder`에서 가져옵니다.
 
-### 메시지 파일 설정
-
-```properties
-# messages_ko.properties
-search.error.invalid.field=잘못된 필드입니다: {0}
-search.error.invalid.operator=지원하지 않는 연산자입니다: {0}
-search.error.invalid.value=잘못된 값입니다: {0}
-search.validation.required=필수 항목입니다: {0}
-search.validation.pattern=형식이 올바르지 않습니다: {0}
-
-# messages_en.properties
-search.error.invalid.field=Invalid field: {0}
-search.error.invalid.operator=Unsupported operator: {0}
-search.error.invalid.value=Invalid value: {0}
-search.validation.required=Required field: {0}
-search.validation.pattern=Invalid format: {0}
-```
-
-### MessageUtils 사용
+### 라이브러리 내장 메시지 조회
 
 ```java
 import dev.simplecore.searchable.core.i18n.MessageUtils;
 
+String message = MessageUtils.getMessage("validator.field.not.found", new Object[]{"title", "PostSearchDTO"});
+// locale=ko: "필드 title를 PostSearchDTO에서 찾을 수 없습니다"
+// locale=en(기본값): "Field title not found in PostSearchDTO"
+```
+
+### 커스텀 메시지 등록
+
+`MessageUtils`는 Spring Boot 자동 구성으로 초기화되지 않습니다. `init()`을 호출하기 전에 `getMessage()`가 먼저 실행되면 라이브러리 내장 번들만 바라보는 기본 `MessageSource`로 고정되므로, 애플리케이션 메시지를 추가하려면 시작 시점에 `MessageUtils.init(...)`을 직접 호출해 `MessageSource`를 등록합니다.
+
+```java
+@Configuration
+public class MessageConfig {
+
+    @PostConstruct
+    public void initMessageUtils() {
+        ResourceBundleMessageSource messageSource = new ResourceBundleMessageSource();
+        messageSource.setBasenames("messages/message", "messages/custom-message");
+        messageSource.setDefaultEncoding("UTF-8");
+        messageSource.setFallbackToSystemLocale(false);
+        MessageUtils.init(messageSource);
+    }
+}
+```
+
+`messages/message`는 라이브러리가 제공하는 기본 번들이고, `messages/custom-message`는 애플리케이션이 추가하는 번들입니다. 두 번들을 함께 등록하면 라이브러리 내장 키와 커스텀 키를 모두 `MessageUtils.getMessage(...)`로 조회할 수 있습니다.
+
+```properties
+# messages/custom-message_ko.properties
+post.validation.title.required=제목은 필수입니다
+
+# messages/custom-message_en.properties
+post.validation.title.required=Title is required
+```
+
+```java
 @Service
 public class PostService extends DefaultSearchableService<Post, Long> {
 
     public void validateAndSave(Post post) {
         if (post.getTitle() == null || post.getTitle().trim().isEmpty()) {
             throw new IllegalArgumentException(
-                MessageUtils.getMessage("search.validation.required", new Object[]{"title"})
-            );
-        }
-
-        if (post.getStatus() == null) {
-            throw new IllegalArgumentException(
-                MessageUtils.getMessage("search.error.invalid.value", new Object[]{"status"})
+                MessageUtils.getMessage("post.validation.title.required")
             );
         }
 
@@ -506,10 +592,6 @@ public class PostService extends DefaultSearchableService<Post, Long> {
     }
 }
 ```
-
-### Spring Boot 자동 구성
-
-MessageUtils는 Spring Boot의 자동 구성 기능을 통해 자동으로 초기화됩니다. 별도의 설정 없이 사용할 수 있습니다.
 
 ## 복합 키 지원
 
@@ -533,5 +615,3 @@ public class EmbeddedIdService extends DefaultSearchableService<TestCompositeKey
     // 자동으로 복합 키 최적화 적용
 }
 ```
-
-이러한 고급 기능들을 통해 복잡한 검색 요구사항도 효율적으로 처리할 수 있습니다. 

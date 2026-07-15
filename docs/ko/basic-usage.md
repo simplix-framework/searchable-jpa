@@ -61,8 +61,12 @@ public class PostSearchDTO {
     @SearchableField(operators = {EQUALS}, sortable = true)
     private Long id;
     
-    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true)
+    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH, ENDS_WITH}, sortable = true)
     private String title;
+    
+    // 게시글 본문 - 임시 저장 상태에서는 비어 있을 수 있어 NULL 체크가 필요
+    @SearchableField(operators = {CONTAINS, IS_NULL, IS_NOT_NULL})
+    private String content;
     
     @SearchableField(operators = {EQUALS, NOT_EQUALS, IN, NOT_IN})
     private PostStatus status;
@@ -77,7 +81,7 @@ public class PostSearchDTO {
     @SearchableField(entityField = "author.name", operators = {EQUALS, CONTAINS})
     private String authorName;
     
-    @SearchableField(entityField = "author.email", operators = {EQUALS, CONTAINS})
+    @SearchableField(entityField = "author.email", operators = {EQUALS, CONTAINS, ENDS_WITH})
     private String authorEmail;
     
     // getters, setters...
@@ -114,10 +118,33 @@ public class PostService extends DefaultSearchableService<Post, Long> {
         super(repository, entityManager);
     }
     
-    // 기본 검색 메서드들이 자동으로 제공됩니다
+    // 기본 검색 메서드가 자동으로 제공됨
     // findAllWithSearch, findOneWithSearch, countWithSearch 등
 }
 ```
+
+### 다른 클래스를 상속해야 하는 경우
+
+이미 다른 클래스를 상속하고 있어 `DefaultSearchableService`를 직접 상속할 수 없다면, `SearchableServiceSupport` 인터페이스와 `SearchableServiceDelegate`를 조합해 동일한 기능을 구현합니다.
+
+```java
+public class PostService extends SomeOtherBaseClass
+        implements SearchableServiceSupport<Post, Long> {
+    
+    private final SearchableServiceDelegate<Post, Long> searchableDelegate;
+    
+    public PostService(PostRepository repository, EntityManager entityManager) {
+        this.searchableDelegate = new SearchableServiceDelegate<>(repository, entityManager, Post.class);
+    }
+    
+    @Override
+    public SearchableServiceDelegate<Post, Long> getSearchableDelegate() {
+        return searchableDelegate;
+    }
+}
+```
+
+`getSearchableDelegate()`가 반환하는 델리게이트가 `findAllWithSearch`, `findOneWithSearch`, `countWithSearch` 등 `SearchableService`의 모든 메서드를 실제로 처리합니다. 상속 구조에 제약이 없다면 `DefaultSearchableService`를 상속하는 방식이 더 간단합니다.
 
 ## 5. 컨트롤러 구현
 
@@ -209,57 +236,65 @@ public Page<Post> searchPosts(
 }
 ```
 
+### 검색 요청 처리 흐름
+
+GET 요청의 쿼리 파라미터는 `SearchableParamsParser`가, POST 요청의 JSON 바디는 Jackson `SearchConditionDeserializer`가 각각 `SearchCondition`으로 변환합니다. 이후 `SearchableFieldValidator`와 `SearchConditionValidator`가 필드·연산자·정렬 조건을 검증하고, `SearchableSpecificationBuilder`가 JPA `Specification`으로 조립합니다. 마지막으로 `TwoPhaseQueryExecutor`가 ID 조회(Phase 1), 카운트 조회(Phase 3), 배치 조회(Phase 2) 순서로 실행해 `Page<T>` 결과를 컨트롤러에 반환합니다.
+
+![검색 요청 처리 흐름](_images/search-request-flow.svg)
+
+*GET·POST 검색 요청이 검증과 두 단계 조회를 거쳐 `Page<T>` 결과로 반환되는 흐름*
+
 ## 6. 기본 검색 연산자 사용법
 
 ### 문자열 검색
 
-```java
-// 정확히 일치
+```bash
+# 정확히 일치
 title.equals=Spring Boot
 
-// 포함
+# 포함
 title.contains=Spring
 
-// 시작
+# 시작
 title.startsWith=Spring
 
-// 끝
+# 끝
 title.endsWith=Boot
 ```
 
 ### 숫자/날짜 비교
 
-```java
-// 크다
+```bash
+# 크다
 viewCount.greaterThan=100
 
-// 작다
+# 작다
 viewCount.lessThan=1000
 
-// 범위 (BETWEEN)
+# 범위 (BETWEEN)
 viewCount.between=100,1000
 
-// 날짜 범위
+# 날짜 범위
 createdAt.between=2024-01-01T00:00:00,2024-12-31T23:59:59
 ```
 
 ### NULL 체크
 
-```java
-// NULL 값
-description.isNull
+```bash
+# NULL 값
+content.isNull
 
-// NOT NULL 값
-description.isNotNull
+# NOT NULL 값
+content.isNotNull
 ```
 
 ### IN 연산자
 
-```java
-// 여러 값 중 하나
+```bash
+# 여러 값 중 하나
 status.in=PUBLISHED,DRAFT
 
-// 여러 값에 포함되지 않음
+# 여러 값에 포함되지 않음
 status.notIn=DELETED,ARCHIVED
 ```
 
@@ -275,7 +310,7 @@ GET /api/posts/search?sort=createdAt.desc
 ### 다중 필드 정렬
 
 ```bash
-GET /api/posts/search?sort=status.asc,createdAt.desc
+GET /api/posts/search?sort=viewCount.desc,createdAt.desc
 ```
 
 ### JSON 방식 정렬
@@ -285,8 +320,8 @@ GET /api/posts/search?sort=status.asc,createdAt.desc
   "sort": {
     "orders": [
       {
-        "field": "status",
-        "direction": "asc"
+        "field": "viewCount",
+        "direction": "desc"
       },
       {
         "field": "createdAt",
@@ -329,7 +364,7 @@ GET /api/posts/search?authorEmail.endsWith=@company.com
 
 ## 다음 단계
 
-기본 사용법을 익혔다면 다음 문서들을 참조하세요:
+기본 사용법을 익혔다면 다음 문서를 참조하세요:
 
 - [고급 기능](advanced-features.md) - 복잡한 검색 조건과 중첩 쿼리
 - [검색 연산자](search-operators.md) - 모든 검색 연산자 상세 설명
