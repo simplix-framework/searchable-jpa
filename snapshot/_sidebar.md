@@ -1,21 +1,21 @@
-* **시작하기**
-  * [소개](ko/README.md)
-  * [설치 가이드](ko/installation.md)
-  * [기본 사용법](ko/basic-usage.md)
-  * [자동 설정](ko/auto-configuration.md)
+* **Getting Started**
+  * [Introduction](en/README.md)
+  * [Installation Guide](en/installation.md)
+  * [Basic Usage](en/basic-usage.md)
+  * [Auto Configuration](en/auto-configuration.md)
 
-* **핵심 기능**
-  * [검색 연산자](ko/search-operators.md)
-  * [2단계 쿼리 최적화](ko/two-phase-query-optimization.md)
-  * [관계형 데이터와 2단계 쿼리](ko/relationship-and-two-phase-query.md)
+* **Core Features**
+  * [Search Operators](en/search-operators.md)
+  * [Two-Phase Query Optimization](en/two-phase-query-optimization.md)
+  * [Relationships and Two-Phase Query](en/relationship-and-two-phase-query.md)
 
-* **고급 기능**
-  * [고급 기능](ko/advanced-features.md)
-  * [OpenAPI 통합](ko/openapi-integration.md)
-  * [API 레퍼런스](ko/api-reference.md)
+* **Advanced Features**
+  * [Advanced Features](en/advanced-features.md)
+  * [OpenAPI Integration](en/openapi-integration.md)
+  * [API Reference](en/api-reference.md)
 
-* **도움말**
-  * [자주 묻는 질문](ko/faq.md)
-  * [변경 사항](ko/changelog.md)
-  * [라이선스](ko/license.md)
-  * [문서 기여 가이드](ko/documentation-guide.md)
+* **Help**
+  * [FAQ](en/faq.md)
+  * [Changelog](en/changelog.md)
+  * [License](en/license.md)
+  * [Documentation Guide](en/documentation-guide.md)

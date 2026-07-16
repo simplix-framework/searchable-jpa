@@ -1,6 +1,6 @@
 # API 레퍼런스
 
-이 문서는 Searchable JPA의 모든 API와 클래스에 대한 상세한 레퍼런스를 제공합니다.
+이 문서는 Searchable JPA의 모든 API와 클래스를 상세히 설명합니다.
 
 ## 핵심 어노테이션
 
@@ -45,7 +45,7 @@ public class UserSearchDTO {
 
 ### @SearchableParams
 
-GET 방식 검색 파라미터에 대한 OpenAPI 문서를 자동 생성하는 어노테이션입니다.
+GET 방식 검색 파라미터의 OpenAPI 문서를 자동으로 생성하는 어노테이션입니다.
 
 ```java
 @Target(ElementType.PARAMETER)
@@ -74,32 +74,37 @@ public Page<User> search(
 
 ```java
 public class SearchCondition<D> {
-    private final List<Node> conditions;
+    private final List<Node> nodes;
     private Sort sort;
     private Integer page;
     private Integer size;
+    private Set<String> fetchFields;
 }
 ```
+
+`@JsonProperty("conditions")`는 `nodes` 필드를 JSON에서 `conditions` 키로 노출하지만, 자바 필드명과 게터는 각각 `nodes`, `getNodes()`입니다. `fetchFields`는 지연 로딩 관계를 명시적으로 fetch join하기 위한 서버 전용 속성이며, JSON 역직렬화 시에는 무시됩니다.
 
 #### 주요 메서드
 
 | 메서드 | 반환 타입 | 설명 |
 |--------|-----------|------|
-| `getConditions()` | `List<Node>` | 검색 조건 노드 목록 반환 |
+| `getNodes()` | `List<Node>` | 검색 조건 노드 목록 반환 |
 | `getSort()` | `Sort` | 정렬 조건 반환 |
 | `getPage()` | `Integer` | 페이지 번호 반환 |
 | `getSize()` | `Integer` | 페이지 크기 반환 |
+| `getFetchFields()` | `Set<String>` | fetch join 대상 엔티티 필드 목록 반환 |
 | `setSort(Sort)` | `void` | 정렬 조건 설정 |
 | `setPage(Integer)` | `void` | 페이지 번호 설정 |
 | `setSize(Integer)` | `void` | 페이지 크기 설정 |
+| `setFetchFields(Set<String>)` | `void` | fetch join 대상 엔티티 필드 목록 설정 |
 
 #### 정적 메서드
 
 ```java
-// JSON에서 SearchCondition 생성
+// Creates a SearchCondition from a JSON string
 public static <T> SearchCondition<T> fromJson(String json, Class<T> dtoClass)
 
-// SearchCondition을 JSON으로 변환
+// Converts this SearchCondition to a JSON string
 public String toJson()
 ```
 
@@ -121,10 +126,11 @@ public static class Condition implements ConditionNode {
 #### 생성자
 
 ```java
-public Condition(String field, SearchOperator searchOperator, Object value)
 public Condition(String field, SearchOperator searchOperator, Object value, Object value2)
-public Condition(LogicalOperator operator, String field, SearchOperator searchOperator, Object value)
+public Condition(LogicalOperator operator, String field, SearchOperator searchOperator, Object value, Object value2, String entityField)
 ```
+
+4개 인자 생성자는 `operator`와 `entityField`를 비워둔 채로 조건을 생성하며, 이후 `setOperator()`/`setEntityField()`로 채울 수 있습니다. 6개 인자 생성자는 Jackson 역직렬화(`@JsonCreator`)와 내부 복사 로직에서 모든 필드를 한 번에 지정할 때 사용합니다.
 
 ### SearchCondition.Group
 
@@ -146,7 +152,6 @@ public static class Sort {
     private final List<Order> orders;
     
     public void addOrder(Order order)
-    public void addOrder(String field, Direction direction)
 }
 ```
 
@@ -160,8 +165,10 @@ public static class Order {
     private final Direction direction;
     private final String entityField;
     
+    public Order(String field, Direction direction, String entityField)
+    public Order(String field, Direction direction)
+    
     public boolean isAscending()
-    public boolean isDescending()
 }
 ```
 
@@ -173,7 +180,7 @@ public static class Order {
 
 ```java
 public enum SearchOperator {
-    // 비교 연산자
+    // Comparison operators
     EQUALS("equals"),
     NOT_EQUALS("notEquals"),
     GREATER_THAN("greaterThan"),
@@ -181,7 +188,7 @@ public enum SearchOperator {
     LESS_THAN("lessThan"),
     LESS_THAN_OR_EQUAL_TO("lessThanOrEqualTo"),
     
-    // 문자열 패턴 연산자
+    // String pattern operators
     CONTAINS("contains"),
     NOT_CONTAINS("notContains"),
     STARTS_WITH("startsWith"),
@@ -189,15 +196,15 @@ public enum SearchOperator {
     ENDS_WITH("endsWith"),
     NOT_ENDS_WITH("notEndsWith"),
     
-    // NULL 체크 연산자
+    // NULL check operators
     IS_NULL("isNull"),
     IS_NOT_NULL("isNotNull"),
     
-    // 컬렉션 연산자
+    // Collection operators
     IN("in"),
     NOT_IN("notIn"),
     
-    // 범위 연산자
+    // Range operators
     BETWEEN("between"),
     NOT_BETWEEN("notBetween");
 }
@@ -206,8 +213,8 @@ public enum SearchOperator {
 #### 주요 메서드
 
 ```java
-public String getName()                    // 연산자 이름 반환
-public static SearchOperator fromName(String operator)  // 이름으로 연산자 찾기
+public String getName()                                 // Returns the operator name
+public static SearchOperator fromName(String operator)   // Finds an operator by name
 ```
 
 ### LogicalOperator
@@ -232,12 +239,12 @@ public enum LogicalOperator {
 
 ```java
 public interface SearchableService<T> {
-    // 검색 메서드
+    // Search methods
     @NonNull
     Page<T> findAllWithSearch(@NonNull SearchCondition<?> searchCondition);
     
     @NonNull
-    <D> Page<D> findAllWithSearch(@NonNull SearchCondition<?> searchCondition, Class<D> dtoClass);
+    <P> Page<P> findAllWithSearch(@NonNull SearchCondition<?> searchCondition, Class<P> projectionClass);
     
     @NonNull
     Optional<T> findOneWithSearch(@NonNull SearchCondition<?> searchCondition);
@@ -245,40 +252,93 @@ public interface SearchableService<T> {
     @NonNull
     Optional<T> findFirstWithSearch(@NonNull SearchCondition<?> searchCondition);
     
-    // 집계 메서드
+    // Aggregate methods
     long countWithSearch(@NonNull SearchCondition<?> searchCondition);
     boolean existsWithSearch(@NonNull SearchCondition<?> searchCondition);
 
-    // 수정/삭제 메서드
+    // Update/delete methods
     long deleteWithSearch(@NonNull SearchCondition<?> searchCondition);
     long updateWithSearch(@NonNull SearchCondition<?> searchCondition, @NonNull Object updateData);
 }
 ```
 
+`findAllWithSearch(SearchCondition<?>, Class<P>)`의 `projectionClass`는 반드시 Spring Data 프로젝션 **인터페이스**여야 합니다. 구체 클래스를 전달하면 `SearchableConfigurationException("Projection class must be an interface")`이 발생합니다.
+
+`findOneWithSearch`는 조건에 맞는 엔티티가 2건 이상이면 `NonUniqueResultException`을 던집니다.
+
 ### DefaultSearchableService<T, ID>
 
-`SearchableService`의 기본 구현체입니다.
+`SearchableService`의 기본 구현체입니다. `DefaultSearchableService`를 직접 상속해 사용합니다.
 
 ```java
-public class DefaultSearchableService<T, ID> implements SearchableService<T> {
-    
-    // 생성자
+public class DefaultSearchableService<T, ID> implements SearchableServiceSupport<T, ID> {
+
+    // Constructor
     public DefaultSearchableService(JpaRepository<T, ID> repository, EntityManager entityManager)
-    
-    // 내부적으로 2단계 쿼리 최적화를 사용하는 기본 메서드들
-    // 클라이언트는 기존 방식대로 사용하면서 2단계 쿼리 최적화의 성능 이점을 얻음
+
+    // Returns the delegate that implements all SearchableService methods
+    @Override
+    public SearchableServiceDelegate<T, ID> getSearchableDelegate()
+}
+```
+
+`SearchableService`의 모든 메서드는 내부적으로 `SearchableServiceDelegate` 인스턴스에 위임되어 실행됩니다. 서비스 클래스는 기존 방식대로 `DefaultSearchableService`를 상속하기만 하면 2단계 쿼리 최적화 효과를 그대로 얻습니다.
+
+### SearchableServiceSupport<T, ID>
+
+`DefaultSearchableService`를 상속할 수 없는 경우(이미 다른 클래스를 상속하는 경우 등)를 위한 믹스인 인터페이스입니다. `SearchableService`의 모든 메서드를 `SearchableServiceDelegate`에 위임하는 기본 메서드로 제공합니다.
+
+```java
+public interface SearchableServiceSupport<T, ID> extends SearchableService<T> {
+
+    // Returns the delegate that provides the actual SearchableService implementation
+    SearchableServiceDelegate<T, ID> getSearchableDelegate();
+}
+```
+
+#### 사용 예제
+
+```java
+public class MyService extends SomeOtherBaseClass
+        implements SearchableServiceSupport<MyEntity, Long> {
+
+    private final SearchableServiceDelegate<MyEntity, Long> searchableDelegate;
+
+    public MyService(JpaRepository<MyEntity, Long> repository, EntityManager em) {
+        this.searchableDelegate = new SearchableServiceDelegate<>(repository, em, MyEntity.class);
+    }
+
+    @Override
+    public SearchableServiceDelegate<MyEntity, Long> getSearchableDelegate() {
+        return searchableDelegate;
+    }
+}
+```
+
+### SearchableServiceDelegate<T, ID>
+
+`SearchableService`의 실제 구현 로직을 담고 있는 독립 실행형 위임체입니다. 인스턴스를 직접 생성해 메서드를 호출할 수도 있고, `SearchableServiceSupport`의 기본 메서드로 간접적으로 사용할 수도 있습니다. `DefaultSearchableService`도 내부적으로 이 클래스에 위임합니다.
+
+```java
+public class SearchableServiceDelegate<T, ID> implements SearchableService<T> {
+
+    public SearchableServiceDelegate(JpaRepository<T, ID> repository, EntityManager entityManager, Class<T> entityClass)
+
+    public SpecificationWithPageable<T> createSpecification(SearchCondition<?> searchCondition)
+    public SearchableSpecificationBuilder<T> createSpecificationBuilder(SearchCondition<?> searchCondition)
 }
 ```
 
 ## 빌더 클래스
 
-### SearchConditionBuilder
+### SearchConditionBuilder<D>
 
-프로그래매틱하게 검색 조건을 생성하는 빌더입니다.
+프로그래밍 방식으로 검색 조건을 생성하는 빌더입니다.
 
 ```java
 public class SearchConditionBuilder<D> {
     public static <D> SearchConditionBuilder<D> create(Class<D> dtoClass)
+    public static <D> SearchConditionBuilder<D> from(SearchCondition<D> existing, Class<D> dtoClass)
     
     public SearchConditionBuilder<D> where(Consumer<ConditionGroupBuilder> consumer)
     public SearchConditionBuilder<D> and(Consumer<ConditionGroupBuilder> consumer)
@@ -286,9 +346,14 @@ public class SearchConditionBuilder<D> {
     public ChainedSearchCondition<D> sort(Consumer<SortBuilder> consumer)
     public ChainedSearchCondition<D> page(int page)
     public ChainedSearchCondition<D> size(int size)
+    public ChainedSearchCondition<D> fetchFields(String... fields)
+    public ChainedSearchCondition<D> fetchFields(Set<String> fields)
     public SearchCondition<D> build()
+    public Class<?> getDtoClass()
 }
 ```
+
+`from(existing, dtoClass)`는 기존 `SearchCondition`의 노드, 정렬, 페이징, fetch join 대상을 깊은 복사해 새 빌더를 초기화합니다. 원본 조건을 그대로 두고 조건을 추가로 확장할 때 사용합니다.
 
 ### ChainedSearchCondition<D>
 
@@ -301,6 +366,8 @@ public interface ChainedSearchCondition<D> {
     ChainedSearchCondition<D> sort(Consumer<SortBuilder> consumer);
     ChainedSearchCondition<D> page(int page);
     ChainedSearchCondition<D> size(int size);
+    ChainedSearchCondition<D> fetchFields(String... fields);
+    ChainedSearchCondition<D> fetchFields(Set<String> fields);
     SearchCondition<D> build();
 }
 ```
@@ -311,7 +378,7 @@ public interface ChainedSearchCondition<D> {
 
 ```java
 public interface FirstCondition {
-    // 비교 연산자
+    // Comparison operators
     ChainedCondition equals(String field, Object value);
     ChainedCondition notEquals(String field, Object value);
     ChainedCondition greaterThan(String field, Object value);
@@ -319,7 +386,7 @@ public interface FirstCondition {
     ChainedCondition lessThan(String field, Object value);
     ChainedCondition lessThanOrEqualTo(String field, Object value);
     
-    // 문자열 패턴 연산자
+    // String pattern operators
     ChainedCondition contains(String field, String value);
     ChainedCondition notContains(String field, String value);
     ChainedCondition startsWith(String field, String value);
@@ -327,19 +394,19 @@ public interface FirstCondition {
     ChainedCondition endsWith(String field, String value);
     ChainedCondition notEndsWith(String field, String value);
     
-    // NULL 체크 연산자
+    // NULL check operators
     ChainedCondition isNull(String field);
     ChainedCondition isNotNull(String field);
     
-    // 컬렉션 연산자
+    // Collection operators
     ChainedCondition in(String field, List<?> values);
     ChainedCondition notIn(String field, List<?> values);
     
-    // 범위 연산자
+    // Range operators
     ChainedCondition between(String field, Object start, Object end);
     ChainedCondition notBetween(String field, Object start, Object end);
 
-    // 그룹 조건
+    // Group condition
     ChainedCondition where(Consumer<FirstCondition> consumer);
 }
 ```
@@ -350,12 +417,12 @@ public interface FirstCondition {
 
 ```java
 public interface ChainedCondition extends FirstCondition {
-    // FirstCondition의 모든 메서드를 상속받아 체이닝 가능
-    // 그룹 조건 (and/or)
+    // Inherits all FirstCondition methods for chaining
+    // Group conditions (and/or)
     ChainedCondition and(Consumer<FirstCondition> consumer);
     ChainedCondition or(Consumer<FirstCondition> consumer);
 
-    // 추가로 OR 연산자들 제공
+    // Additional OR operator variants
     ChainedCondition orEquals(String field, Object value);
     ChainedCondition orNotEquals(String field, Object value);
     ChainedCondition orGreaterThan(String field, Object value);
@@ -405,19 +472,19 @@ public class SearchableParamsParser<D> {
 #### 지원하는 파라미터 형식
 
 ```java
-// 기본 검색
+// Basic search
 "field.operator=value"
 
-// 정렬
+// Sort
 "sort=field.asc,field.desc"
 
-// 페이징
+// Pagination
 "page=0&size=10"
 
-// 범위 검색
+// Range search
 "field.between=value1,value2"
 
-// IN 검색
+// IN search
 "field.in=value1,value2,value3"
 ```
 
@@ -425,13 +492,13 @@ public class SearchableParamsParser<D> {
 
 ### 자동 최적화
 
-Searchable JPA는 내부적으로 2단계 쿼리 최적화를 사용하여 성능을 최적화합니다. 클라이언트는 표준 Spring Data의 `Page<T>` 인터페이스를 사용하면서 2단계 쿼리 최적화의 이점을 얻을 수 있습니다.
+Searchable JPA는 내부적으로 2단계 쿼리 기법을 사용해 성능을 높입니다. 표준 Spring Data `Page<T>` 인터페이스를 그대로 사용하면서도 2단계 쿼리 최적화 효과를 얻습니다.
 
 ```java
-// 클라이언트 코드는 기존과 동일
+// Client code stays the same as before
 Page<Post> result = postService.findAllWithSearch(condition);
 
-// 내부적으로는 2단계 쿼리 최적화로 변환되어 실행됨
+// Internally converted into a two-phase query for execution
 ```
 
 ## 예외 클래스
@@ -453,9 +520,8 @@ public class SearchableException extends RuntimeException {
 
 ```java
 public class SearchableValidationException extends SearchableException {
-    private final List<String> validationErrors;
-    
-    public List<String> getValidationErrors()
+    public SearchableValidationException(String message)
+    public SearchableValidationException(String message, Throwable cause)
 }
 ```
 
@@ -465,11 +531,8 @@ public class SearchableValidationException extends SearchableException {
 
 ```java
 public class SearchableParseException extends SearchableException {
-    private final String invalidValue;
-    private final String fieldName;
-    
-    public String getInvalidValue()
-    public String getFieldName()
+    public SearchableParseException(String message)
+    public SearchableParseException(String message, Throwable cause)
 }
 ```
 
@@ -480,6 +543,7 @@ public class SearchableParseException extends SearchableException {
 ```java
 public class SearchableConfigurationException extends SearchableException {
     public SearchableConfigurationException(String message)
+    public SearchableConfigurationException(String message, Throwable cause)
 }
 ```
 
@@ -490,6 +554,7 @@ public class SearchableConfigurationException extends SearchableException {
 ```java
 public class SearchableJoinException extends SearchableException {
     public SearchableJoinException(String message)
+    public SearchableJoinException(String message, Throwable cause)
 }
 ```
 
@@ -500,6 +565,7 @@ public class SearchableJoinException extends SearchableException {
 ```java
 public class SearchableOperationException extends SearchableException {
     public SearchableOperationException(String message)
+    public SearchableOperationException(String message, Throwable cause)
 }
 ```
 
@@ -507,27 +573,59 @@ public class SearchableOperationException extends SearchableException {
 
 ### SearchableFieldUtils
 
-`@SearchableField` 어노테이션 처리를 위한 유틸리티입니다.
+`@SearchableField` 어노테이션을 처리하는 유틸리티입니다.
 
 ```java
 public class SearchableFieldUtils {
-    public static boolean isSearchableField(Field field)
-    public static SearchableField getSearchableField(Field field)
-    public static String getEntityFieldName(Field field, SearchableField annotation)
-    public static Set<SearchOperator> getAllowedOperators(SearchableField annotation)
-    public static boolean isSortable(SearchableField annotation)
+    // Marker returned for composite-key entities (@IdClass or @EmbeddedId)
+    public static final String COMPOSITE_KEY_MARKER = "__COMPOSITE_KEY__";
+
+    // Clears all static caches (use in test setup together with @DirtiesContext)
+    public static void clearCache()
+
+    // Resolves the entity field name for a DTO field via @SearchableField(entityField)
+    public static String getEntityFieldFromDto(Class<?> dtoClass, String field)
+
+    // Finds a declared field by name across the class hierarchy
+    public static Field findFieldInHierarchy(Class<?> type, String fieldName)
+
+    // Collects all fields annotated with @SearchableField across the class hierarchy
+    public static List<Field> getSearchableFields(Class<?> dtoClass)
+
+    // Resolves the field name to use for sorting (sortField -> entityField -> field name)
+    public static String getSortFieldFromDto(Class<?> dtoClass, String field)
+
+    // Resolves the primary key field name via the JPA metamodel
+    // (returns COMPOSITE_KEY_MARKER for composite keys)
+    public static String getPrimaryKeyFieldName(EntityManager entityManager, Class<?> entityClass)
+
+    // Checks whether the entity uses @EmbeddedId
+    public static boolean isEmbeddedIdEntity(EntityManager entityManager, Class<?> entityClass)
+
+    // Resolves the @EmbeddedId attribute name, or null if the entity does not use @EmbeddedId
+    public static String getEmbeddedIdAttributeName(EntityManager entityManager, Class<?> entityClass)
+
+    // Resolves all ID field names for composite-key entities (@IdClass or @EmbeddedId)
+    public static List<String> getCompositeKeyFieldNames(EntityManager entityManager, Class<?> entityClass)
+
+    // Extracts join paths (e.g. "author", "author.address") required by the given condition nodes
+    public static Set<String> extractJoinPaths(List<SearchCondition.Node> nodes)
 }
 ```
 
 ### SearchableValueParser
 
-값 변환을 위한 유틸리티입니다.
+값을 변환하는 유틸리티입니다.
 
 ```java
 public class SearchableValueParser {
+    // Parses a string value to the target type
     public static Object parseValue(String value, Class<?> targetType)
-    public static List<Object> parseValues(String value, Class<?> targetType)
-    public static Object[] parseBetweenValues(String value, Class<?> targetType)
+
+    // Parses a string value to the target type for a between operation.
+    // For date/time types with no explicit time component, adjusts the start value to
+    // the beginning of day and the end value to the end of day.
+    public static Object parseValueForBetween(String value, Class<?> targetType, boolean isEndValue)
 }
 ```
 
@@ -551,8 +649,13 @@ public class SearchableProperties {
     @Data
     public static class HibernateProperties {
         private boolean autoOptimization = true;
+
+        @Min(1)
         private int defaultBatchFetchSize = 100;
+
+        @Min(1)
         private int jdbcBatchSize = 1000;
+
         private boolean batchVersionedData = true;
         private boolean orderInserts = true;
         private boolean orderUpdates = true;
@@ -560,6 +663,8 @@ public class SearchableProperties {
     }
 }
 ```
+
+`defaultBatchFetchSize`와 `jdbcBatchSize`에는 `@Min(1)` 제약이 적용되어 있어, 1 미만 값으로 설정하면 애플리케이션 구동 시점에 검증 오류가 발생합니다.
 
 ## 예제 코드
 
@@ -569,22 +674,22 @@ public class SearchableProperties {
 
 #### DTO 클래스 정의
 ```java
-// 기본적인 DTO 설정 예제는 기본 사용법 문서 참조
-// 복합 키 관련 예제는 고급 기능 문서 참조
+// See the basic usage guide for a standard DTO configuration example
+// See the advanced features guide for composite-key examples
 ```
 
 #### 서비스 클래스 구현
 ```java
-// 서비스 구현 예제는 기본 사용법 문서 참조
-// 고급 기능은 고급 기능 문서 참조
+// See the basic usage guide for a service implementation example
+// See the advanced features guide for advanced scenarios
 ```
 
 #### 컨트롤러 구현
 ```java
-// 컨트롤러 구현 예제는 기본 사용법 문서 참조
-// OpenAPI 통합은 OpenAPI 통합 문서 참조
+// See the basic usage guide for a controller implementation example
+// See the OpenAPI integration guide for Swagger/OpenAPI setup
 ```
 
 ## 다음 단계
 
-- [FAQ](faq.md) - 자주 묻는 질문들 
+- [FAQ](faq.md) - 자주 묻는 질문

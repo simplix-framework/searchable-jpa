@@ -21,20 +21,72 @@
 
 ## 의존성 추가
 
+### GitHub Packages 인증 설정
+
+Searchable JPA는 GitHub Packages에만 배포됩니다. 의존성을 내려받으려면 저장소 등록과 인증 정보 설정을 먼저 마쳐야 합니다.
+
+#### Gradle 저장소 설정
+
+`settings.gradle`에 다음을 추가하세요.
+
+```gradle
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven {
+            url = uri("https://maven.pkg.github.com/simplecore-inc/searchable-jpa")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_USERNAME")
+                password = project.findProperty("gpr.token") ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
+}
+```
+
+#### Maven 저장소 설정
+
+`pom.xml`에 저장소를 등록하세요.
+
+```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/simplecore-inc/searchable-jpa</url>
+    </repository>
+</repositories>
+```
+
+`~/.m2/settings.xml`에 인증 정보를 추가하세요.
+
+```xml
+<settings>
+    <servers>
+        <server>
+            <id>github</id>
+            <username>${env.GITHUB_USERNAME}</username>
+            <password>${env.GITHUB_TOKEN}</password>
+        </server>
+    </servers>
+</settings>
+```
+
+> **중요**: GitHub 토큰에 `read:packages` 권한이 필요합니다. [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)에서 생성하세요.
+
 ### Gradle
 
 ```gradle
 dependencies {
-    // Searchable JPA 스타터
+    // Searchable JPA starter
     implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:${version}'
 
-    // Spring Boot JPA 스타터 (필수)
+    // Spring Boot JPA starter (required)
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
-    // 데이터베이스 드라이버 (예: H2)
+    // Database driver (e.g., H2)
     runtimeOnly 'com.h2database:h2'
 
-    // OpenAPI 통합 (선택사항) - Spring Boot 3.x 버전
+    // OpenAPI integration (optional) - Spring Boot 3.x
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0'
 }
 ```
@@ -43,27 +95,27 @@ dependencies {
 
 ```xml
 <dependencies>
-    <!-- Searchable JPA 스타터 -->
+    <!-- Searchable JPA starter -->
     <dependency>
         <groupId>dev.simplecore.searchable</groupId>
         <artifactId>spring-boot-starter-searchable-jpa</artifactId>
         <version>${searchable-jpa.version}</version>
     </dependency>
 
-    <!-- Spring Boot JPA 스타터 (필수) -->
+    <!-- Spring Boot JPA starter (required) -->
     <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
 
-    <!-- 데이터베이스 드라이버 (예: H2) -->
+    <!-- Database driver (e.g., H2) -->
     <dependency>
         <groupId>com.h2database</groupId>
         <artifactId>h2</artifactId>
         <scope>runtime</scope>
     </dependency>
 
-    <!-- OpenAPI 통합 (선택사항) - Spring Boot 3.x 버전 -->
+    <!-- OpenAPI integration (optional) - Spring Boot 3.x -->
     <dependency>
         <groupId>org.springdoc</groupId>
         <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
@@ -78,14 +130,14 @@ dependencies {
 
 ```yaml
 spring:
-  # 데이터소스 설정
+  # Datasource configuration
   datasource:
     url: jdbc:h2:mem:testdb
     driverClassName: org.h2.Driver
     username: sa
     password: password
   
-  # JPA 설정
+  # JPA configuration
   jpa:
     hibernate:
       ddl-auto: update
@@ -94,38 +146,38 @@ spring:
       hibernate:
         format_sql: true
 
-# Searchable JPA 설정
+# Searchable JPA configuration
 searchable:
-  # Swagger/OpenAPI 통합
+  # Swagger/OpenAPI integration
   swagger:
     enabled: true
 
-  # Hibernate 최적화 (자동 적용)
+  # Hibernate optimizations (applied automatically)
   hibernate:
-    auto-optimization: true          # 자동 최적화 활성화
-    default-batch-fetch-size: 100    # N+1 문제 방지 배치 크기
-    jdbc-batch-size: 1000            # JDBC 배치 처리 크기
-    batch-versioned-data: true       # 버전 관리 배치 처리
-    order-inserts: true              # INSERT 순서 최적화
-    order-updates: true              # UPDATE 순서 최적화
-    in-clause-parameter-padding: true # IN 절 파라미터 패딩
+    auto-optimization: true          # Enable automatic optimization
+    default-batch-fetch-size: 100    # Batch size to prevent N+1 queries
+    jdbc-batch-size: 1000            # JDBC batch processing size
+    batch-versioned-data: true       # Batch processing for versioned entities
+    order-inserts: true              # Optimize INSERT ordering
+    order-updates: true              # Optimize UPDATE ordering
+    in-clause-parameter-padding: true # IN clause parameter padding
 ```
 
 ### application.properties
 
 ```properties
-# 데이터소스 설정
+# Datasource configuration
 spring.datasource.url=jdbc:h2:mem:testdb
 spring.datasource.driverClassName=org.h2.Driver
 spring.datasource.username=sa
 spring.datasource.password=password
 
-# JPA 설정
+# JPA configuration
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
 spring.jpa.properties.hibernate.format_sql=true
 
-# Searchable JPA 설정
+# Searchable JPA configuration
 searchable.swagger.enabled=true
 searchable.hibernate.auto-optimization=true
 searchable.hibernate.default-batch-fetch-size=100
@@ -143,11 +195,11 @@ searchable.hibernate.in-clause-parameter-padding=true
 > **상세한 엔티티 설정**: 완전한 엔티티 설정 예제는 [기본 사용법](basic-usage.md) 문서를 참조하세요.
 
 ```java
-// 기본 엔티티 설정 예제는 기본 사용법 문서 참조
-// 복합 키 엔티티 설정 예제는 고급 기능 문서 참조
+// See the basic usage guide for a complete entity configuration example
+// See the advanced features guide for composite key entity configuration examples
 ```
 
-### 복합 키 엔티티
+### 복합 키 엔티티 설정
 
 #### @IdClass 방식
 
@@ -170,12 +222,12 @@ public class MultiTenantEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
     
-    // 복합 키 클래스
+    // Composite key class
     public static class CompositeKey implements Serializable {
         private String tenantId;
         private Long entityId;
         
-        // 기본 생성자
+        // Default constructor
         public CompositeKey() {}
         
         public CompositeKey(String tenantId, Long entityId) {
@@ -183,7 +235,7 @@ public class MultiTenantEntity {
             this.entityId = entityId;
         }
         
-        // equals, hashCode 구현 (필수)
+        // equals, hashCode implementation (required)
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
@@ -198,10 +250,10 @@ public class MultiTenantEntity {
             return Objects.hash(tenantId, entityId);
         }
         
-        // getter, setter
+        // getters and setters
     }
     
-    // getter, setter
+    // getters and setters
 }
 ```
 
@@ -220,7 +272,7 @@ public class EmbeddedKeyEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
     
-    // 임베디드 키 클래스
+    // Embedded key class
     @Embeddable
     public static class CompositeKey implements Serializable {
         @Column(name = "entity_id")
@@ -229,7 +281,7 @@ public class EmbeddedKeyEntity {
         @Column(name = "tenant_id")
         private String tenantId;
         
-        // 기본 생성자
+        // Default constructor
         public CompositeKey() {}
         
         public CompositeKey(Long entityId, String tenantId) {
@@ -237,7 +289,7 @@ public class EmbeddedKeyEntity {
             this.tenantId = tenantId;
         }
         
-        // equals, hashCode 구현 (필수)
+        // equals, hashCode implementation (required)
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
@@ -252,35 +304,35 @@ public class EmbeddedKeyEntity {
             return Objects.hash(entityId, tenantId);
         }
         
-        // getter, setter
+        // getters and setters
     }
     
-    // getter, setter
+    // getters and setters
 }
 ```
 
-## 레포지토리 설정
+## 저장소 설정
 
-### 기본 레포지토리
+### 기본 저장소
 
 ```java
 @Repository
 public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificationExecutor<Post> {
-    // JpaSpecificationExecutor 상속 필수
+    // Must extend JpaSpecificationExecutor
 }
 ```
 
-### 복합 키 레포지토리
+### 복합 키 저장소
 
 ```java
-// @IdClass 방식
+// @IdClass approach
 @Repository
 public interface MultiTenantEntityRepository 
     extends JpaRepository<MultiTenantEntity, MultiTenantEntity.CompositeKey>, 
             JpaSpecificationExecutor<MultiTenantEntity> {
 }
 
-// @EmbeddedId 방식
+// @EmbeddedId approach
 @Repository
 public interface EmbeddedKeyEntityRepository 
     extends JpaRepository<EmbeddedKeyEntity, EmbeddedKeyEntity.CompositeKey>, 
@@ -295,8 +347,8 @@ public interface EmbeddedKeyEntityRepository
 > **상세한 서비스 구현**: 완전한 서비스 구현 예제는 [기본 사용법](basic-usage.md) 문서를 참조하세요.
 
 ```java
-// 서비스 구현 예제는 기본 사용법 문서 참조
-// 고급 서비스 기능은 고급 기능 문서 참조
+// See the basic usage guide for a service implementation example
+// See the advanced features guide for advanced service capabilities
 ```
 
 ### DTO 클래스 정의
@@ -304,8 +356,8 @@ public interface EmbeddedKeyEntityRepository
 > **상세한 DTO 설정**: 완전한 DTO 설정 예제는 [기본 사용법](basic-usage.md) 문서를 참조하세요.
 
 ```java
-// DTO 설정 예제는 기본 사용법 문서 참조
-// 복합 키 DTO 설정은 고급 기능 문서 참조
+// See the basic usage guide for a DTO configuration example
+// See the advanced features guide for composite key DTO configuration
 ```
 
 ## 검색 DTO 정의
@@ -329,14 +381,14 @@ public class PostSearchDTO {
     @SearchableField(operators = {GREATER_THAN, LESS_THAN, BETWEEN}, sortable = true)
     private LocalDateTime createdAt;
     
-    // getter, setter
+    // getters and setters
 }
 ```
 
 ### 복합 키 검색 DTO
 
 ```java
-// @IdClass 방식 검색 DTO
+// Search DTO for the @IdClass approach
 public class MultiTenantEntitySearchDTO {
     @SearchableField(operators = {EQUALS, IN})
     private String tenantId;
@@ -350,10 +402,10 @@ public class MultiTenantEntitySearchDTO {
     @SearchableField(operators = {GREATER_THAN, LESS_THAN}, sortable = true)
     private LocalDateTime createdAt;
     
-    // getter, setter
+    // getters and setters
 }
 
-// @EmbeddedId 방식 검색 DTO
+// Search DTO for the @EmbeddedId approach
 public class EmbeddedKeyEntitySearchDTO {
     @SearchableField(entityField = "id.entityId", operators = {EQUALS, GREATER_THAN, LESS_THAN})
     private Long entityId;
@@ -367,7 +419,7 @@ public class EmbeddedKeyEntitySearchDTO {
     @SearchableField(operators = {GREATER_THAN, LESS_THAN}, sortable = true)
     private LocalDateTime createdAt;
     
-    // getter, setter
+    // getters and setters
 }
 ```
 
@@ -378,11 +430,13 @@ public class EmbeddedKeyEntitySearchDTO {
 > **상세한 컨트롤러 구현**: 완전한 컨트롤러 구현 예제는 [기본 사용법](basic-usage.md) 문서를 참조하세요.
 
 ```java
-// 컨트롤러 구현 예제는 기본 사용법 문서 참조
-// OpenAPI 통합은 OpenAPI 통합 문서 참조
+// See the basic usage guide for a controller implementation example
+// See the OpenAPI integration guide for OpenAPI integration details
 ```
 
 ## 데이터베이스별 설정
+
+Hibernate 6은 JDBC URL과 드라이버로 데이터베이스 dialect를 자동으로 인식하므로, 아래 예제처럼 `database-platform`을 별도로 지정할 필요가 없습니다.
 
 ### MySQL
 
@@ -395,7 +449,6 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   
   jpa:
-    database-platform: org.hibernate.dialect.MySQL8Dialect
     hibernate:
       ddl-auto: validate
 ```
@@ -411,7 +464,6 @@ spring:
     driver-class-name: org.postgresql.Driver
   
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQL10Dialect
     hibernate:
       ddl-auto: validate
 ```
@@ -427,7 +479,6 @@ spring:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
   
   jpa:
-    database-platform: org.hibernate.dialect.SQLServer2012Dialect
     hibernate:
       ddl-auto: validate
 ```
@@ -437,22 +488,22 @@ spring:
 ### 인덱스 생성
 
 ```sql
--- 기본 검색 인덱스
+-- Basic search indexes
 CREATE INDEX idx_posts_title ON posts(title);
 CREATE INDEX idx_posts_status ON posts(status);
 CREATE INDEX idx_posts_created_at ON posts(created_at DESC);
 
--- 복합 인덱스 (검색 + 정렬)
+-- Composite index (search + sort)
 CREATE INDEX idx_posts_status_created_at ON posts(status, created_at DESC);
 
--- 연관 관계 인덱스
+-- Association index
 CREATE INDEX idx_posts_author_id ON posts(author_id);
 
--- 복합 키 인덱스
+-- Composite key indexes
 CREATE INDEX idx_multi_tenant_composite ON multi_tenant_entities(tenant_id, entity_id);
 CREATE INDEX idx_embedded_key_composite ON embedded_key_entities(tenant_id, entity_id);
 
--- 부분 검색 인덱스
+-- Partial search index
 CREATE INDEX idx_multi_tenant_name ON multi_tenant_entities(tenant_id, name);
 ```
 
@@ -461,13 +512,13 @@ CREATE INDEX idx_multi_tenant_name ON multi_tenant_entities(tenant_id, name);
 ```yaml
 searchable:
   hibernate:
-    auto-optimization: true          # 자동 최적화 활성화
-    default-batch-fetch-size: 100    # N+1 문제 방지 배치 크기
-    jdbc-batch-size: 1000            # JDBC 배치 처리 크기
-    batch-versioned-data: true       # 버전 관리 배치 처리
-    order-inserts: true              # INSERT 순서 최적화
-    order-updates: true              # UPDATE 순서 최적화
-    in-clause-parameter-padding: true # IN 절 파라미터 패딩 최적화
+    auto-optimization: true          # Enable automatic optimization
+    default-batch-fetch-size: 100    # Batch size to prevent N+1 queries
+    jdbc-batch-size: 1000            # JDBC batch processing size
+    batch-versioned-data: true       # Batch processing for versioned entities
+    order-inserts: true              # Optimize INSERT ordering
+    order-updates: true              # Optimize UPDATE ordering
+    in-clause-parameter-padding: true # IN clause parameter padding optimization
 ```
 
 ## 설치 검증
@@ -506,31 +557,42 @@ public class TestController {
 
 ### 애플리케이션 시작 확인
 
-애플리케이션 시작 시 다음 로그가 출력되면 정상적으로 설치된 것입니다:
+Searchable JPA의 초기화 로그는 TRACE 레벨로 남습니다. Spring Boot 기본 로그 레벨(INFO)에서는 표시되지 않으므로, 로그로 설치를 확인하려면 다음 설정을 추가하세요.
+
+```yaml
+logging:
+  level:
+    dev.simplecore.searchable: TRACE
+```
+
+설정 후 애플리케이션을 시작하면 다음 로그가 출력됩니다.
 
 ```
-INFO  d.s.s.a.SearchableJpaConfiguration - SearchableJpaConfiguration is being initialized
-INFO  d.s.s.a.SearchableJpaConfiguration - Configuring automatic Hibernate optimizations for searchable-jpa...
-INFO  d.s.s.a.SearchableJpaConfiguration - Applied Hibernate optimizations:
-INFO  d.s.s.a.SearchableJpaConfiguration -   - default_batch_fetch_size: 100
-INFO  d.s.s.a.SearchableJpaConfiguration -   - jdbc.batch_size: 1000
-INFO  d.s.s.a.SearchableJpaConfiguration -   - order_inserts: true
-INFO  d.s.s.a.SearchableJpaConfiguration -   - order_updates: true
-INFO  d.s.s.a.SearchableJpaConfiguration -   - in_clause_parameter_padding: true
-INFO  d.s.s.a.SearchableJpaConfiguration - These settings help prevent N+1 problems and improve performance automatically.
-INFO  d.s.s.a.SearchableJpaConfiguration - To disable auto-optimization, set: searchable.hibernate.auto-optimization=false
+TRACE d.s.s.a.SearchableJpaConfiguration - SearchableJpaConfiguration is being initialized
+TRACE d.s.s.a.SearchableJpaConfiguration - Configuring automatic Hibernate optimizations for searchable-jpa...
+TRACE d.s.s.a.SearchableJpaConfiguration - Applied Hibernate optimizations:
+TRACE d.s.s.a.SearchableJpaConfiguration -   - default_batch_fetch_size: 100
+TRACE d.s.s.a.SearchableJpaConfiguration -   - jdbc.batch_size: 1000
+TRACE d.s.s.a.SearchableJpaConfiguration -   - order_inserts: true
+TRACE d.s.s.a.SearchableJpaConfiguration -   - order_updates: true
+TRACE d.s.s.a.SearchableJpaConfiguration -   - in_clause_parameter_padding: true
+TRACE d.s.s.a.SearchableJpaConfiguration - These settings help prevent N+1 problems and improve performance automatically.
+TRACE d.s.s.a.SearchableJpaConfiguration - To disable auto-optimization, set: searchable.hibernate.auto-optimization=false
 ```
+
+이 로그가 보이지 않아도 자동 최적화는 기본값으로 이미 적용된 상태입니다. 로그는 진행 상태를 확인하는 용도일 뿐입니다.
 
 ## 문제 해결
 
 ### 일반적인 문제들
 
 1. **"Repository must implement JpaSpecificationExecutor" 오류**
-   - 레포지토리에 `JpaSpecificationExecutor<T>` 상속 추가
+   - 저장소에 `JpaSpecificationExecutor<T>` 상속 추가
 
-2. **"Unable to determine ID field name" 오류**
-   - 엔티티에 `@Id` 어노테이션 확인
+2. **"Could not determine primary key field for entity ..." 경고**
+   - 엔티티에 `@Id` 어노테이션이 있는지 확인
    - 복합 키의 경우 `@IdClass` 또는 `@EmbeddedId` 설정 확인
+   - WARN 레벨 로그이며, 정렬 결과에 동일한 값이 있으면 페이지네이션 순서가 정확하지 않을 수 있음을 알려줌
 
 3. **자동 설정이 작동하지 않는 경우**
    - `spring-boot-starter-searchable-jpa` 의존성 확인
@@ -540,4 +602,4 @@ INFO  d.s.s.a.SearchableJpaConfiguration - To disable auto-optimization, set: se
    - 복합 키 클래스에 `equals()`, `hashCode()` 구현 확인
    - `Serializable` 인터페이스 구현 확인
 
-이제 Searchable JPA가 성공적으로 설치되었습니다! [기본 사용법](basic-usage.md)으로 넘어가서 첫 번째 검색 기능을 구현해보세요.
+이제 Searchable JPA가 성공적으로 설치되었습니다. [기본 사용법](basic-usage.md)으로 넘어가서 첫 번째 검색 기능을 구현해보세요.
