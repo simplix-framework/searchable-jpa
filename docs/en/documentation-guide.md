@@ -37,7 +37,7 @@ The `Deploy Documentation` GitHub Actions workflow publishes `gh-pages`. A docum
 
 The root page redirects to the highest available stable release, or the snapshot when there is no stable release. Query and hash state are retained. The selector operates on sibling version directories, preserves the requested language/page/heading and checks page availability before navigation. A missing page falls back to the language home page, then English. A failed network request leaves the current page open.
 
-Published site: [Searchable JPA documentation](https://simplecore-inc.github.io/searchable-jpa/). GitHub Pages must serve the `gh-pages` branch root. Repository workflow permissions must allow the deployment workflow to write that branch.
+Published site: [Searchable JPA documentation](https://simplix-framework.github.io/searchable-jpa/). GitHub Pages must serve the `gh-pages` branch root. Repository workflow permissions must allow the deployment workflow to write that branch.
 
 ## Troubleshooting
 

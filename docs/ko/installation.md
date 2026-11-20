@@ -61,13 +61,13 @@ Maven은 로컬 저장소를 자동으로 조회합니다.
 
 ## GitHub Packages
 
-원격에 게시된 버전을 사용할 때는 `https://maven.pkg.github.com/simplecore-inc/searchable-jpa` 저장소와 실제 게시된 버전을 지정하세요. 인증 정보는 커밋하는 파일에 작성하지 마세요.
+원격에 게시된 버전을 사용할 때는 `https://maven.pkg.github.com/simplix-framework/searchable-jpa` 저장소와 실제 게시된 버전을 지정하세요. 인증 정보는 커밋하는 파일에 작성하지 마세요.
 
 ```groovy
 repositories {
     mavenCentral()
     maven {
-        url = uri('https://maven.pkg.github.com/simplecore-inc/searchable-jpa')
+        url = uri('https://maven.pkg.github.com/simplix-framework/searchable-jpa')
         credentials {
             username = System.getenv('GITHUB_USERNAME')
             password = System.getenv('GITHUB_TOKEN')

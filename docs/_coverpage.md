@@ -13,4 +13,4 @@
 
 [Get Started](/en/installation.md)
 [한국어 문서](/ko/)
-[GitHub](https://github.com/simplecore-inc/searchable-jpa)
+[GitHub](https://github.com/simplix-framework/searchable-jpa)

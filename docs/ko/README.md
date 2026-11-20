@@ -53,4 +53,4 @@ GET /api/posts?title.contains=Spring&sort=createdAt.desc&page=0&size=20
 
 ## 라이선스와 지원
 
-[SimpleCORE License 1.0](./license.md)을 적용합니다. 재현 가능한 오류는 [GitHub Issues](https://github.com/simplecore-inc/searchable-jpa/issues)에 등록하세요. 라이브러리, Java, Spring Boot, 데이터베이스 버전과 최소 DTO·엔티티 매핑, 민감한 정보를 제거한 실패 요청을 함께 작성하세요.
+[SimpleCORE License 1.0](./license.md)을 적용합니다. 재현 가능한 오류는 [GitHub Issues](https://github.com/simplix-framework/searchable-jpa/issues)에 등록하세요. 라이브러리, Java, Spring Boot, 데이터베이스 버전과 최소 DTO·엔티티 매핑, 민감한 정보를 제거한 실패 요청을 함께 작성하세요.

@@ -61,13 +61,13 @@ A Maven consumer uses its local repository automatically:
 
 ## GitHub Packages
 
-For a remotely published version, configure `https://maven.pkg.github.com/simplecore-inc/searchable-jpa` and select a version that actually exists in that repository. Keep credentials outside committed files:
+For a remotely published version, configure `https://maven.pkg.github.com/simplix-framework/searchable-jpa` and select a version that actually exists in that repository. Keep credentials outside committed files:
 
 ```groovy
 repositories {
     mavenCentral()
     maven {
-        url = uri('https://maven.pkg.github.com/simplecore-inc/searchable-jpa')
+        url = uri('https://maven.pkg.github.com/simplix-framework/searchable-jpa')
         credentials {
             username = System.getenv('GITHUB_USERNAME')
             password = System.getenv('GITHUB_TOKEN')
