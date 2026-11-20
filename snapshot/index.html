@@ -124,7 +124,7 @@
     window.$docsify = {
       name: '<img src="https://img.shields.io/badge/Searchable-JPA-ea580c?style=for-the-badge" alt="Searchable JPA">',
       nameLink: '#/',
-      repo: 'https://github.com/simplecore-inc/searchable-jpa',
+      repo: 'https://github.com/simplix-framework/searchable-jpa',
       loadSidebar: true,
       loadNavbar: true,
       coverpage: true,
@@ -256,7 +256,7 @@
             if (!/^(en|ko)\/[A-Za-z0-9_-]+\.md$/.test(file)) return html;
             var release = /\/(\d+\.\d+\.\d+)\/(?:index\.html)?$/.exec(window.location.pathname);
             var ref = release ? 'v' + release[1] : 'master';
-            var url = 'https://github.com/simplecore-inc/searchable-jpa/blob/' + ref + '/docs/' + file;
+            var url = 'https://github.com/simplix-framework/searchable-jpa/blob/' + ref + '/docs/' + file;
             var editHtml = '\n\n---\n\n' +
               '<div style="text-align: right; font-size: 0.9em; color: #999;">' +
               '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: #999;">' + editText + '</a>' +

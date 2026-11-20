@@ -53,4 +53,4 @@ See the [API reference](/en/api-reference.md), [advanced features](/en/advanced-
 
 ## License and support
 
-The [SimpleCORE License 1.0](/en/license.md) applies. Report reproducible bugs through [GitHub Issues](https://github.com/simplecore-inc/searchable-jpa/issues). Include the library, Java, Spring Boot and database versions, a minimal DTO/entity mapping and a sanitized failing request.
+The [SimpleCORE License 1.0](/en/license.md) applies. Report reproducible bugs through [GitHub Issues](https://github.com/simplix-framework/searchable-jpa/issues). Include the library, Java, Spring Boot and database versions, a minimal DTO/entity mapping and a sanitized failing request.
