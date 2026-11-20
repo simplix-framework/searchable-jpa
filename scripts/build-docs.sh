@@ -65,7 +65,7 @@ convert_links() {
 
   # Common link conversions
   sed -i.bak -e "s|(/$dir_path/_images/|(./_images/|g" \
-             -e 's|\.\./\.\./LICENSE|https://github.com/simplecore-inc/searchable-jpa/blob/master/LICENSE|g' \
+             -e 's|\.\./\.\./LICENSE|https://github.com/simplix-framework/searchable-jpa/blob/master/LICENSE|g' \
              "$file" && rm -f "${file}.bak"
 }
 

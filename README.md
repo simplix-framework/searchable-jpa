@@ -2,7 +2,7 @@
 
 DTO-controlled filtering, sorting, pagination and time counts for Spring Data JPA, with Spring Boot configuration and SpringDoc integration.
 
-[English documentation](https://simplecore-inc.github.io/searchable-jpa/#/en/) · [한국어 문서](https://simplecore-inc.github.io/searchable-jpa/#/ko/) · [Changes](docs/en/changelog.md)
+[English documentation](https://simplix-framework.github.io/searchable-jpa/#/en/) · [한국어 문서](https://simplix-framework.github.io/searchable-jpa/#/ko/) · [Changes](docs/en/changelog.md)
 
 ## Compatibility
 

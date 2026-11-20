@@ -3,5 +3,5 @@
   * [한국어](/ko/)
 
 * Links
-  * [GitHub](https://github.com/simplecore-inc/searchable-jpa)
-  * [Releases](https://github.com/simplecore-inc/searchable-jpa/releases)
+  * [GitHub](https://github.com/simplix-framework/searchable-jpa)
+  * [Releases](https://github.com/simplix-framework/searchable-jpa/releases)

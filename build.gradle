@@ -168,12 +168,12 @@ subprojects {
                     } else {
                         throw new RuntimeException("No metadata found for project: ${project.name}")
                     }
-                    url = 'https://github.com/simplecore-inc/searchable-jpa'
+                    url = 'https://github.com/simplix-framework/searchable-jpa'
 
                     licenses {
                         license {
                             name = 'SimpleCORE License 1.0 (SCL-1.0)'
-                            url = 'https://github.com/simplecore-inc/searchable-jpa/blob/master/LICENSE'
+                            url = 'https://github.com/simplix-framework/searchable-jpa/blob/master/LICENSE'
                         }
                     }
                     developers {
@@ -183,9 +183,9 @@ subprojects {
                         }
                     }
                     scm {
-                        connection = 'scm:git:git://github.com/simplecore-inc/searchable-jpa.git'
-                        developerConnection = 'scm:git:ssh://github.com:simplecore-inc/searchable-jpa.git'
-                        url = 'https://github.com/simplecore-inc/searchable-jpa'
+                        connection = 'scm:git:git://github.com/simplix-framework/searchable-jpa.git'
+                        developerConnection = 'scm:git:ssh://github.com:simplix-framework/searchable-jpa.git'
+                        url = 'https://github.com/simplix-framework/searchable-jpa'
                     }
 
                     // Add version compatibility information (properties)
@@ -207,7 +207,7 @@ subprojects {
         repositories {
             maven {
                 name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/simplecore-inc/searchable-jpa")
+                url = uri("https://maven.pkg.github.com/simplix-framework/searchable-jpa")
                 credentials {
                     username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
                     password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
