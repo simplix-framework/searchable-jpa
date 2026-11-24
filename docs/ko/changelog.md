@@ -94,7 +94,7 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
 
 ### v1.0.9
 - OpenAPI 문서 출력 간소화로 응답 크기 축소 ([`b9af1cb`](https://github.com/simplix-framework/searchable-jpa/commit/b9af1cb))
-- Context7 문서 색인 연동 설정 추가 ([`291609a`](https://github.com/simplecore-inc/searchable-jpa/commit/291609a))
+- Context7 문서 색인 연동 설정 추가 ([`291609a`](https://github.com/simplix-framework/searchable-jpa/commit/291609a))
 
 ### v1.0.8
 - `orXXX()` 연산자와 중첩 그룹 조건이 사라지던 문제 수정 ([`9378984`](https://github.com/simplix-framework/searchable-jpa/commit/9378984))

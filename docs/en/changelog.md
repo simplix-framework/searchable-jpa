@@ -94,7 +94,7 @@ This release includes breaking changes.
 
 ### v1.0.9
 - Reduced response size by simplifying OpenAPI documentation output ([`b9af1cb`](https://github.com/simplix-framework/searchable-jpa/commit/b9af1cb))
-- Added Context7 documentation indexing configuration ([`291609a`](https://github.com/simplecore-inc/searchable-jpa/commit/291609a))
+- Added Context7 documentation indexing configuration ([`291609a`](https://github.com/simplix-framework/searchable-jpa/commit/291609a))
 
 ### v1.0.8
 - Fixed an issue where `orXXX()` operators and nested group conditions were dropped ([`9378984`](https://github.com/simplix-framework/searchable-jpa/commit/9378984))
