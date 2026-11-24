@@ -1,15 +1,15 @@
 package dev.simplecore.searchable.core.condition.parser;
 
-import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.SearchCondition;
 import dev.simplecore.searchable.core.condition.SearchConditionBuilder;
 import dev.simplecore.searchable.core.condition.builder.ChainedCondition;
 import dev.simplecore.searchable.core.condition.builder.FirstCondition;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
-import dev.simplecore.searchable.core.exception.SearchableException;
 import dev.simplecore.searchable.core.exception.SearchableParseException;
 import dev.simplecore.searchable.core.exception.SearchableValidationException;
 import dev.simplecore.searchable.core.i18n.MessageUtils;
+import dev.simplecore.searchable.core.utils.SearchableDtoMetadata;
+import dev.simplecore.searchable.core.utils.SearchableDtoMetadata.SearchField;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import dev.simplecore.searchable.core.utils.SearchableValueParser;
 import java.lang.reflect.Field;
@@ -49,9 +49,24 @@ public class SearchableParamsParser<D> {
     public static final String KEYWORD_PARAM = "keyword";
 
     private final Class<D> dtoClass;
+    private final boolean ignoreUnknownParameters;
 
     public SearchableParamsParser(@NonNull Class<D> dtoClass) {
+        this(dtoClass, false);
+    }
+
+    /**
+     * @param dtoClass the search DTO the parameters are read against
+     * @param ignoreUnknownParameters whether a parameter that is not a search parameter of the DTO is
+     *                                left out instead of being refused: one without a
+     *                                {@code field.operator} name, or one naming a field the DTO does
+     *                                not declare. A request then may carry parameters meant for
+     *                                something else. A parameter that names a field of the DTO is
+     *                                always read, and refused when it is wrong.
+     */
+    public SearchableParamsParser(@NonNull Class<D> dtoClass, boolean ignoreUnknownParameters) {
         this.dtoClass = dtoClass;
+        this.ignoreUnknownParameters = ignoreUnknownParameters;
     }
 
     /**
@@ -62,63 +77,58 @@ public class SearchableParamsParser<D> {
      * @throws SearchableParseException if parsing fails
      */
     public SearchCondition<D> convert(@NonNull Map<String, String> params) {
-        try {
-            SearchConditionBuilder<D> builder = SearchConditionBuilder.create(dtoClass);
+        SearchConditionBuilder<D> builder = SearchConditionBuilder.create(dtoClass);
 
-            // Parse conditions
-            Map<String, String> conditions = new HashMap<>();
-            String[] keyword = new String[1];
+        // Parse conditions
+        Map<String, String> conditions = new HashMap<>();
+        String[] keyword = new String[1];
 
-            params.forEach((key, value) -> {
-                switch (key) {
-                    case "sort":
-                        parseSort(builder, value);
-                        break;
-                    case "page":
-                        validateNumeric(value, "page");
-                        builder.page(Integer.parseInt(value));
-                        break;
-                    case "size":
-                        validateNumeric(value, "size");
-                        builder.size(Integer.parseInt(value));
-                        break;
-                    case KEYWORD_PARAM:
-                        keyword[0] = value;
-                        break;
-                    default:
+        params.forEach((key, value) -> {
+            switch (key) {
+                case "sort":
+                    parseSort(builder, value);
+                    break;
+                case "page":
+                    validateNumeric(value, "page");
+                    builder.page(Integer.parseInt(value));
+                    break;
+                case "size":
+                    validateNumeric(value, "size");
+                    builder.size(Integer.parseInt(value));
+                    break;
+                case KEYWORD_PARAM:
+                    keyword[0] = value;
+                    break;
+                default:
+                    if (!ignoreUnknownParameters || namesAFieldOfTheDto(key)) {
                         conditions.put(key, value);
-                        break;
+                    }
+                    break;
+            }
+        });
+
+        List<String> keywordFields = StringUtils.hasText(keyword[0]) ? keywordFields() : List.of();
+
+        // Parse conditions (AND), with the keyword's OR group as one more AND-ed member
+        if (!conditions.isEmpty() || !keywordFields.isEmpty()) {
+            String text = StringUtils.hasText(keyword[0]) ? keyword[0].trim() : null;
+            builder.where(whereBuilder -> {
+                conditions.forEach((key, value) -> parseCondition(whereBuilder, key, value));
+                if (!keywordFields.isEmpty()) {
+                    // A nested group, never inlined: inlined, the OR chain folds left to right
+                    // into "(conditions AND first) OR second OR ...", and every condition
+                    // before it, a caller's range included, stops narrowing the result.
+                    whereBuilder.and(group -> {
+                        ChainedCondition chain = group.contains(keywordFields.get(0), text);
+                        for (int i = 1; i < keywordFields.size(); i++) {
+                            chain = chain.orContains(keywordFields.get(i), text);
+                        }
+                    });
                 }
             });
-
-            List<String> keywordFields = StringUtils.hasText(keyword[0]) ? keywordFields() : List.of();
-
-            // Parse conditions (AND), with the keyword's OR group as one more AND-ed member
-            if (!conditions.isEmpty() || !keywordFields.isEmpty()) {
-                String text = StringUtils.hasText(keyword[0]) ? keyword[0].trim() : null;
-                builder.where(whereBuilder -> {
-                    conditions.forEach((key, value) -> parseCondition(whereBuilder, key, value));
-                    if (!keywordFields.isEmpty()) {
-                        // A nested group, never inlined: inlined, the OR chain folds left to right
-                        // into "(conditions AND first) OR second OR ...", and every condition
-                        // before it, a caller's range included, stops narrowing the result.
-                        whereBuilder.and(group -> {
-                            ChainedCondition chain = group.contains(keywordFields.get(0), text);
-                            for (int i = 1; i < keywordFields.size(); i++) {
-                                chain = chain.orContains(keywordFields.get(i), text);
-                            }
-                        });
-                    }
-                });
-            }
-
-            return builder.build();
-        } catch (SearchableException e) {
-            // Preserve dedicated parse/validation messages instead of masking them with the generic one.
-            throw e;
-        } catch (Exception e) {
-            throw new SearchableParseException(MessageUtils.getMessage("parser.parse.error"), e);
         }
+
+        return builder.build();
     }
 
     /**
@@ -129,26 +139,23 @@ public class SearchableParamsParser<D> {
      */
     private List<String> keywordFields() {
         List<String> fields = new ArrayList<>();
-        for (Class<?> type = dtoClass; type != null && type != Object.class; type = type.getSuperclass()) {
-            for (Field field : type.getDeclaredFields()) {
-                SearchableField annotation = field.getAnnotation(SearchableField.class);
-                if (annotation == null || !annotation.keyword()) {
-                    continue;
-                }
-                boolean containsAllowed = annotation.operators().length == 0
-                        || Arrays.asList(annotation.operators()).contains(SearchOperator.CONTAINS);
-                if (field.getType() != String.class || !containsAllowed) {
-                    throw new SearchableParseException(MessageUtils.getMessage(
-                            "parser.keyword.field.invalid", new Object[]{field.getName()}));
-                }
-                fields.add(field.getName());
+        for (SearchField field : SearchableDtoMetadata.of(dtoClass).keywordFields()) {
+            if (field.type() != String.class || !field.allows(SearchOperator.CONTAINS)) {
+                throw new SearchableParseException(MessageUtils.getMessage(
+                        "parser.keyword.field.invalid", new Object[]{field.name()}));
             }
+            fields.add(field.name());
         }
         if (fields.isEmpty()) {
             throw new SearchableParseException(MessageUtils.getMessage(
                     "parser.keyword.unsupported", new Object[]{dtoClass.getSimpleName()}));
         }
         return fields;
+    }
+
+    private boolean namesAFieldOfTheDto(String key) {
+        Matcher matcher = fieldOperatorPattern.matcher(key);
+        return matcher.matches() && SearchableDtoMetadata.of(dtoClass).field(matcher.group(1)) != null;
     }
 
     private void validateNumeric(String value, String field) {
@@ -290,28 +297,32 @@ public class SearchableParamsParser<D> {
     }
 
     private Object parseValue(String field, String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return null;
-        }
-
-        try {
-            Class<?> fieldType = getFieldType(field);
-            return SearchableValueParser.parseValue(value, fieldType);
-        } catch (Exception e) {
-            throw new SearchableParseException("Failed to parse value for field: " + field, e);
-        }
+        return parseTyped(field, value, null);
     }
 
     private Object parseValueForBetween(String field, String value, boolean isEndValue) {
+        return parseTyped(field, value, isEndValue);
+    }
+
+    /**
+     * Reads a parameter value in the type of its DTO field. A String field keeps the text exactly
+     * as sent, the same as a JSON body does, so no value is rewritten on one path only.
+     */
+    private Object parseTyped(String field, String value, Boolean rangeEnd) {
         if (value == null || value.trim().isEmpty()) {
             return null;
         }
-
+        Class<?> fieldType = getFieldType(field);
+        if (fieldType == String.class) {
+            return value;
+        }
         try {
-            Class<?> fieldType = getFieldType(field);
-            return SearchableValueParser.parseValueForBetween(value, fieldType, isEndValue);
-        } catch (Exception e) {
-            throw new SearchableParseException("Failed to parse value for field: " + field, e);
+            return rangeEnd == null
+                    ? SearchableValueParser.parseValue(value, fieldType)
+                    : SearchableValueParser.parseValueForBetween(value, fieldType, rangeEnd);
+        } catch (SearchableParseException e) {
+            throw new SearchableParseException(
+                    MessageUtils.getMessage("parser.field.value.invalid", new Object[]{field, e.getMessage()}), e);
         }
     }
 

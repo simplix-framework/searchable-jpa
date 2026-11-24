@@ -17,7 +17,6 @@ import dev.simplecore.searchable.core.i18n.MessageUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import lombok.Setter;
 
 /**
@@ -132,14 +131,18 @@ public class NodeDeserializer extends JsonDeserializer<Node> {
     }
 
     private void checkTree(JsonNode node, int depth, int[] count) {
-        if (depth > SearchRequestLimits.MAX_DEPTH || ++count[0] > SearchRequestLimits.MAX_NODES) {
-            throw new SearchableValidationException("Search tree exceeds the depth or node limit");
+        SearchRequestLimits.Structure limits = SearchRequestLimits.structureLimits();
+        if (depth > limits.maxDepth() || ++count[0] > limits.maxNodes()) {
+            throw new SearchableValidationException(MessageUtils.getMessage("limits.tree"));
         }
-        if (node.path("value").isArray() && node.path("value").size() > SearchRequestLimits.MAX_IN_VALUES) {
-            throw new SearchableValidationException("Search collection exceeds maximum size 1000");
+        if (node.path("value").isArray() && node.path("value").size() > limits.maxInValues()) {
+            throw new SearchableValidationException(MessageUtils.getMessage("limits.collection",
+                    new Object[]{String.valueOf(limits.maxInValues())}));
         }
         if (node.path("conditions").isArray()) {
-            for (JsonNode child : node.path("conditions")) checkTree(child, depth + 1, count);
+            for (JsonNode child : node.path("conditions")) {
+                checkTree(child, depth + 1, count);
+            }
         }
     }
 } 

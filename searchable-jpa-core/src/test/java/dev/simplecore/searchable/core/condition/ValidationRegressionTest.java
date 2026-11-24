@@ -3,10 +3,8 @@ package dev.simplecore.searchable.core.condition;
 import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.*;
 import dev.simplecore.searchable.core.condition.operator.*;
-import dev.simplecore.searchable.core.condition.parser.SearchableParamsParser;
 import dev.simplecore.searchable.test.dto.InheritedSearchDTOs.ChildSearchDTO;
 import jakarta.validation.constraints.NotNull;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 

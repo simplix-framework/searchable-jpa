@@ -10,7 +10,6 @@ import dev.simplecore.searchable.test.entity.TestAuthor;
 import dev.simplecore.searchable.test.entity.TestComment;
 import dev.simplecore.searchable.test.entity.TestPost;
 import dev.simplecore.searchable.test.enums.TestPostStatus;
-import dev.simplecore.searchable.test.repository.TestPostRepository;
 import dev.simplecore.searchable.test.service.TestPostService;
 import dev.simplecore.searchable.test.support.TestSqlCapture;
 import lombok.extern.slf4j.Slf4j;
@@ -20,13 +19,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.criteria.JoinType;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -38,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Verifies the single primary-key portions of Category 1:
  * 1-2 (over-the-end page still reports the true total),
  * 1-4 (sorting through a to-many relationship keeps pagination stable),
- * 1-6 (Phase 2 applies distinct so to-many fetches do not leak duplicate roots).
+ * 1-6 (Phase 2 returns each root once although a to-many fetch repeats it in the rows).
  */
 @Slf4j
 @SpringBootTest
@@ -54,9 +51,6 @@ class TwoPhaseSinglePkIssuesTest {
 
     @Autowired
     private TestPostService testPostService;
-
-    @Autowired
-    private TestPostRepository testPostRepository;
 
     @BeforeEach
     @Transactional
@@ -141,8 +135,8 @@ class TwoPhaseSinglePkIssuesTest {
 
     @Test
     @Transactional
-    @DisplayName("1-6: Phase 2 entity-fetch query applies distinct for to-many fetch joins")
-    void phaseTwoAppliesDistinct() {
+    @DisplayName("1-6: Phase 2 returns each root once without asking the database for DISTINCT")
+    void phaseTwoReturnsEachRootOnceWithoutDistinct() {
         SearchCondition<TestPostDTOs.TestPostSearchDTO> condition =
                 SearchConditionBuilder.create(TestPostDTOs.TestPostSearchDTO.class)
                         .where(w -> w.equals("status", TestPostStatus.PUBLISHED))
@@ -160,45 +154,14 @@ class TwoPhaseSinglePkIssuesTest {
         assertThat(page.getContent()).hasSize(5);
         assertThat(page.getContent().stream().map(TestPost::getPostId).distinct().count()).isEqualTo(5L);
 
-        // The Phase 2 entity-fetch query (the one that joins the comments table) must be a
-        // SELECT DISTINCT so the database de-duplicates root rows from the to-many fetch join.
+        // The Phase 2 entity-fetch query (the one that joins the comments table) selects every
+        // column of the entity. A database cannot apply DISTINCT to a row holding a large-object
+        // column, and Hibernate already returns each root once, so the statement must not ask for it.
         List<String> phaseTwoFetches = TestSqlCapture.captured().stream()
                 .map(sql -> sql.toLowerCase())
                 .filter(sql -> sql.contains("from test_post") && sql.contains("test_comment"))
                 .collect(Collectors.toList());
         assertThat(phaseTwoFetches).isNotEmpty();
-        assertThat(phaseTwoFetches).allMatch(sql -> sql.contains("select distinct"));
-    }
-
-    @Test
-    @Transactional
-    @DisplayName("1-6: distinct keeps the SQL result set free of exact-duplicate root rows (A/B on same query)")
-    void distinctRemovesDuplicateRootRowsWhenApplicable() {
-        List<Long> ids = testPostRepository.findAll().stream()
-                .map(TestPost::getPostId)
-                .sorted()
-                .limit(5)
-                .collect(Collectors.toList());
-
-        // Fetch a ToOne relationship (author). Same query, only distinct differs. Capturing the SQL
-        // confirms distinct(true) reaches the database as SELECT DISTINCT.
-        Specification<TestPost> withDistinct = (root, query, cb) -> {
-            query.distinct(true);
-            root.fetch("author", JoinType.LEFT);
-            return root.get("postId").in(ids);
-        };
-
-        TestSqlCapture.start();
-        List<TestPost> result = testPostRepository.findAll(withDistinct);
-        TestSqlCapture.stop();
-
-        // Correctness: exactly the 5 requested posts, no duplicates.
-        assertThat(result).hasSize(5);
-        assertThat(result.stream().map(TestPost::getPostId).distinct().count()).isEqualTo(5L);
-
-        // The distinct(true) flag is passed through to the emitted SQL.
-        assertThat(TestSqlCapture.captured())
-                .anyMatch(sql -> sql.toLowerCase().contains("select distinct")
-                        && sql.toLowerCase().contains("from test_post"));
+        assertThat(phaseTwoFetches).noneMatch(sql -> sql.contains("distinct"));
     }
 }

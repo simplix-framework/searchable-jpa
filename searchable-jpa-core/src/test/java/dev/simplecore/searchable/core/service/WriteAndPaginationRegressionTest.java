@@ -8,7 +8,9 @@ import dev.simplecore.searchable.test.dto.TestUpdatableSearchDTO;
 import dev.simplecore.searchable.test.entity.TestUpdatableEntity;
 import dev.simplecore.searchable.test.repository.TestUpdatableEntityRepository;
 import jakarta.persistence.EntityManager;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ContextConfiguration;
@@ -17,7 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.*;
 
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:audit;DB_CLOSE_DELAY=-1", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
+@SpringBootTest(properties={"searchable.test.h2-url=jdbc:h2:mem:audit;DB_CLOSE_DELAY=-1", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
 @ContextConfiguration(classes=BaseTestConfig.class)
 public class WriteAndPaginationRegressionTest {
     @Autowired EntityManager em;
@@ -32,6 +34,7 @@ public class WriteAndPaginationRegressionTest {
             var patch=new TestUpdatableEntity();patch.setId(old+10000);patch.setStatus("NEW");
             service().updateWithSearch(c,patch);em.flush();
             assertThat(e.getId()).isEqualTo(old);
+            s.setRollbackOnly();
         });
     }
     @Test void firstShouldIgnorePageOffset() {
@@ -39,6 +42,7 @@ public class WriteAndPaginationRegressionTest {
             row("only-first-audit","ACTIVE");
             var c=SearchConditionBuilder.create(TestUpdatableSearchDTO.class).where(w->w.equals("name","only-first-audit")).page(10).size(20).build();
             assertThat(service().findFirstWithSearch(c)).isPresent();
+            s.setRollbackOnly();
         });
     }
     @Test void writesVisitEveryRowWhenTheFilterChanges() {
@@ -54,10 +58,16 @@ public class WriteAndPaginationRegressionTest {
         assertThat(service().countWithSearch(changed)).isZero();
     }
     @Test void excessivePageSizeAndOverflowAreRejectedBeforeSql() {
-        var c = new SearchCondition<>(); c.setPage(0); c.setSize(Integer.MAX_VALUE);
-        assertThatThrownBy(() -> service().findAllWithSearch(c)).hasMessageContaining("size");
-        c.setSize(20); c.setPage(Integer.MAX_VALUE);
-        assertThatThrownBy(() -> service().findAllWithSearch(c)).hasMessageContaining("offset");
+        // The assertions read English wording.
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        try {
+            var c = new SearchCondition<>(); c.setPage(0); c.setSize(Integer.MAX_VALUE);
+            assertThatThrownBy(() -> service().findAllWithSearch(c)).hasMessageContaining("size");
+            c.setSize(20); c.setPage(Integer.MAX_VALUE);
+            assertThatThrownBy(() -> service().findAllWithSearch(c)).hasMessageContaining("offset");
+        } finally {
+            LocaleContextHolder.resetLocaleContext();
+        }
     }
     public static class NamePatch {
         private String name;
@@ -74,6 +84,7 @@ public class WriteAndPaginationRegressionTest {
             var entityPatch = new TestUpdatableEntity(); entityPatch.setRevision(999L); entityPatch.setName("again");
             service().updateWithSearch(filter, entityPatch);
             assertThat(e.getRevision()).isNotEqualTo(999L);
+            tx.setRollbackOnly();
         });
     }
 }

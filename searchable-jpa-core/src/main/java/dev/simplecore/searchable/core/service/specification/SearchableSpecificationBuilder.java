@@ -1,10 +1,11 @@
 package dev.simplecore.searchable.core.service.specification;
 
 import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.SearchCondition.Node;
-import dev.simplecore.searchable.core.condition.operator.LogicalOperator;
 import dev.simplecore.searchable.core.condition.validator.SearchRequestLimits;
-import dev.simplecore.searchable.core.service.join.JoinManager;
+import dev.simplecore.searchable.core.exception.SearchableOperationException;
+import dev.simplecore.searchable.core.exception.SearchableValidationException;
+import dev.simplecore.searchable.core.i18n.MessageUtils;
+import dev.simplecore.searchable.core.service.join.EntityPaths;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -18,47 +19,62 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.NonNull;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /**
- * Builds JPA Specification from SearchCondition.
- * Thread-safe and immutable implementation.
+ * Builds and runs the queries of one search: its filter, its sort and its page.
+ * An instance serves one {@link SearchCondition} and is not shared between threads.
  *
  * @param <T> The entity type
  */
-@Slf4j
 public class SearchableSpecificationBuilder<T> {
-    private static final int DEFAULT_PAGE_SIZE = 20;
 
     private final SearchCondition<?> condition;
     private final EntityManager entityManager;
     private final Class<T> entityClass;
     private final JpaSpecificationExecutor<T> specificationExecutor;
     private final RelationshipAnalyzer<T> relationshipAnalyzer;
-    private final JoinStrategyManager<T> joinStrategyManager;
+    private final SearchFilter<T> filter;
     private final TwoPhaseQueryExecutor<T> twoPhaseQueryExecutor;
 
-    // Cache for relationship analysis to prevent redundant calls
-    private volatile Set<String> cachedCommonToOneFields;
-    private final Object cacheLock = new Object();
+    private Set<String> commonToOneFields;
 
     public SearchableSpecificationBuilder(@NonNull SearchCondition<?> condition,
                                           @NonNull EntityManager entityManager,
                                           @NonNull Class<T> entityClass,
                                           @NonNull JpaSpecificationExecutor<T> specificationExecutor) {
+        this(condition, entityManager, entityClass, specificationExecutor, null);
+    }
+
+    /**
+     * @param condition what the client asked for
+     * @param entityManager an entity manager of the entity's persistence unit
+     * @param entityClass the entity searched
+     * @param specificationExecutor the entity's repository
+     * @param scope a restriction the server adds to every query of this search, or null. It is
+     *              combined with AND outside the client's conditions and has to return a predicate
+     *              over the root alone: no fetch join and no change to the query.
+     */
+    public SearchableSpecificationBuilder(@NonNull SearchCondition<?> condition,
+                                          @NonNull EntityManager entityManager,
+                                          @NonNull Class<T> entityClass,
+                                          @NonNull JpaSpecificationExecutor<T> specificationExecutor,
+                                          Specification<T> scope) {
         SearchRequestLimits.validateStructure(condition);
         this.condition = condition;
         this.entityManager = entityManager;
         this.entityClass = entityClass;
         this.specificationExecutor = specificationExecutor;
         this.relationshipAnalyzer = new RelationshipAnalyzer<>(entityManager, entityClass);
-        this.joinStrategyManager = new JoinStrategyManager<>(entityManager, entityClass);
-        this.twoPhaseQueryExecutor = new TwoPhaseQueryExecutor<>(condition, entityManager, entityClass, specificationExecutor);
+        this.filter = new SearchFilter<>(condition, entityManager, entityClass, scope);
+        this.twoPhaseQueryExecutor = new TwoPhaseQueryExecutor<>(filter, entityManager, entityClass, specificationExecutor);
     }
 
     public static <T> SearchableSpecificationBuilder<T> of(
@@ -69,274 +85,240 @@ public class SearchableSpecificationBuilder<T> {
         return new SearchableSpecificationBuilder<>(condition, entityManager, entityClass, specificationExecutor);
     }
 
+    public static <T> SearchableSpecificationBuilder<T> of(
+            @NonNull SearchCondition<?> condition,
+            @NonNull EntityManager entityManager,
+            @NonNull Class<T> entityClass,
+            @NonNull JpaSpecificationExecutor<T> specificationExecutor,
+            Specification<T> scope) {
+        return new SearchableSpecificationBuilder<>(condition, entityManager, entityClass, specificationExecutor, scope);
+    }
+
     /**
-     * Creates Sort object from SearchCondition orders.
-     * Automatically adds primary key field to guarantee a deterministic row order across pages.
-     * If no sort conditions are specified, automatically adds PK sorting in ascending order.
+     * Creates the Sort of the search and appends the primary key, so rows sharing a sort value keep
+     * one order across pages. A composite key is appended as a marker the composite-key executor
+     * expands into its fields.
      */
     private Sort createSort() {
         SearchCondition.Sort sortCondition = condition.getSort();
-        List<Sort.Order> sortOrders;
-        
-        if (sortCondition == null || sortCondition.getOrders().isEmpty()) {
-            // No sort conditions specified - automatically add PK sorting
-            sortOrders = new ArrayList<>();
-        } else {
-            // Convert SearchCondition orders to Spring Data Sort orders
-            sortOrders = sortCondition.getOrders().stream()
-                    .map(this::createOrder)
-                    .collect(Collectors.toList());
+        List<Sort.Order> sortOrders = sortCondition == null
+                ? new ArrayList<>()
+                : sortCondition.getOrders().stream().map(this::createOrder).collect(Collectors.toCollection(ArrayList::new));
+
+        String primaryKeyField = SearchableFieldUtils.getPrimaryKeyFieldName(entityManager, entityClass);
+        if (sortOrders.stream().noneMatch(order -> primaryKeyField.equals(order.getProperty()))) {
+            sortOrders.add(Sort.Order.by(primaryKeyField));
         }
-
-        // Automatically add primary key field to guarantee deterministic ordering
-        sortOrders = ensureUniqueSorting(sortOrders);
-
         return Sort.by(sortOrders);
     }
 
-    /**
-     * Ensures unique sorting by adding primary key field if not already present.
-     * Without a unique tiebreaker, rows sharing the same sort value may repeat or
-     * disappear across page boundaries.
-     *
-     * @param sortOrders the existing sort orders
-     * @return sort orders with primary key field added if necessary
-     */
-    private List<Sort.Order> ensureUniqueSorting(List<Sort.Order> sortOrders) {
-        try {
-            String primaryKeyField = SearchableFieldUtils.getPrimaryKeyFieldName(entityManager, entityClass);
-
-            if (primaryKeyField != null) {
-                // Check if primary key field is already in sort orders
-                boolean hasPrimaryKey = sortOrders.stream()
-                        .anyMatch(order -> primaryKeyField.equals(order.getProperty()));
-
-                if (!hasPrimaryKey) {
-                    // Add primary key field as the last sort criterion in ascending order
-                    sortOrders = new ArrayList<>(sortOrders);
-                    sortOrders.add(Sort.Order.by(primaryKeyField));
-
-                    log.trace("Automatically added primary key field '{}' to sort criteria for deterministic pagination ordering",
-                            primaryKeyField);
-                }
-            } else {
-                log.warn("Could not determine primary key field for entity {}. Pagination may not work correctly with duplicate sort values.",
-                        entityClass.getSimpleName());
-            }
-
-            return sortOrders;
-
-        } catch (Exception e) {
-            log.warn("Failed to ensure unique sorting for entity {}: {}. Using original sort orders.",
-                    entityClass.getSimpleName(), e.getMessage());
-            return sortOrders;
-        }
-    }
-
-    /**
-     * Creates Sort.Order from SearchCondition.Order.
-     * Direction defaults to ASC if not specified.
-     */
     private Sort.Order createOrder(SearchCondition.Order order) {
         String field = order.getEntityField();
         if (field == null || field.isEmpty()) {
             field = order.getField();
         }
-        Sort.Direction direction = order.isAscending() ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return new Sort.Order(direction, field);
-    }
-
-    /**
-     * Creates and combines predicates from condition nodes.
-     * Returns null if no predicates created.
-     */
-    private Predicate createPredicates(Root<T> root,
-                                       CriteriaQuery<?> query,
-                                       CriteriaBuilder cb,
-                                       SpecificationBuilder<T> specBuilder) {
-        List<Node> nodes = condition.getNodes();
-        if (nodes == null || nodes.isEmpty()) {
-            return null;
-        }
-
-        // Always apply distinct for safety
-        query.distinct(true);
-
-        // Process the first node
-        Node firstNode = nodes.get(0);
-        Predicate result = specBuilder.build(root, query, cb, firstNode);
-        if (result == null) {
-            return null;
-        }
-
-        // Process remaining nodes in order, combining them with their respective operators
-        for (int i = 1; i < nodes.size(); i++) {
-            Node currentNode = nodes.get(i);
-            Predicate currentPredicate = specBuilder.build(root, query, cb, currentNode);
-            if (currentPredicate == null) continue;
-
-            if (currentNode.getOperator() == LogicalOperator.OR) {
-                result = cb.or(result, currentPredicate);
-            } else {
-                result = cb.and(result, currentPredicate);
-            }
-        }
-
-        return result;
+        return new Sort.Order(order.isAscending() ? Sort.Direction.ASC : Sort.Direction.DESC, field);
     }
 
     /**
      * Builds SpecificationWithPageable from SearchCondition.
-     * Thread-safe method that creates new instance each time.
      *
      * @return SpecificationWithPageable containing specification and page request
      * @deprecated Use buildAndExecuteWithTwoPhaseOptimization() instead for optimized pagination
      */
     @Deprecated
     public SpecificationWithPageable<T> build() {
-        return new SpecificationWithPageable<>(
-                buildSpecification(),
-                buildPageRequest()
-        );
+        return buildSpecificationOnly();
     }
 
-
-
     /**
-     * Builds only the specification part for operations that don't need pagination.
-     * This method is used for count, exists, delete, and update operations.
+     * Builds the specification of the search for a repository query that pages for itself or does
+     * not page: find one, count, exists.
      *
-     * @return SpecificationWithPageable containing specification without pagination optimization
+     * <p>A query that returns the entity fetches its to-one associations with it. The filter never
+     * multiplies rows, so the specification asks for no {@code DISTINCT}.
+     *
+     * @return the specification and the page request of the search
      */
     public SpecificationWithPageable<T> buildSpecificationOnly() {
-        return new SpecificationWithPageable<>(
-                buildSpecification(),
-                buildPageRequest()
-        );
-    }
-
-
-    private Specification<T> buildSpecification() {
-        return (root, query, cb) -> {
-            // True for any query that does not select the entity itself — a count, but also a
-            // grouped aggregate. Such a query cannot carry fetch joins: Hibernate refuses a
-            // fetch whose owner is absent from the select list, so the whole query fails rather
-            // than merely loading less than it could have.
-            boolean isProjectionQuery = !root.getJavaType().isAssignableFrom(query.getResultType());
-
-            // Always extract join paths from conditions (needed for filtering)
-            Set<String> conditionJoinPaths = extractJoinPaths(condition.getNodes());
-
-            log.trace("Applying joins - condition paths: {}, query type: {}, isProjectionQuery: {}",
-                    conditionJoinPaths, query.getResultType(), isProjectionQuery);
-
-            // For non-count queries, add common ToOne fields to prevent N+1 problems
-            Set<String> allJoinPaths = new HashSet<>(conditionJoinPaths);
-            if (!isProjectionQuery) {
-                Set<String> commonToOneFields = getCachedCommonToOneFields();
-                log.trace("Adding common ToOne fields for entity query: {}", commonToOneFields);
-                allJoinPaths.addAll(commonToOneFields);
+        Specification<T> specification = (root, query, cb) -> {
+            if (SpecificationQuerySupport.selectsEntity(root, query)) {
+                SpecificationQuerySupport.applyFetchJoins(root, query, directToOneFields());
             }
-
-            // Apply joins (with different strategy for count vs select queries)
-            joinStrategyManager.applyJoins(root, allJoinPaths, isProjectionQuery);
-
-            // Apply distinct only if we have actual joins
-            if (!root.getJoins().isEmpty()) {
-                query.distinct(true);
-            }
-
-            JoinManager<T> joinManager = new JoinManager<>(entityManager, root);
-            PredicateBuilder<T> predicateBuilder = new PredicateBuilder<>(cb, joinManager);
-            SpecificationBuilder<T> specBuilder = new SpecificationBuilder<>(predicateBuilder);
-
-            return createPredicates(root, query, cb, specBuilder);
+            return filter.matching(root, query, cb);
         };
-    }
-
-    private Set<String> extractJoinPaths(List<Node> nodes) {
-        // Delegate to shared utility for consistent behavior
-        return SearchableFieldUtils.extractJoinPaths(nodes);
+        return new SpecificationWithPageable<>(specification, buildPageRequest());
     }
 
     /**
-     * Execute query with two-phase optimization.
-     * Phase 1: Get IDs only (regular joins to avoid memory paging)
-     * Phase 2: Load complete entities with smart fetch joins
+     * The filter of the search as a predicate for a query the caller builds: the client's
+     * conditions and the server's scope, without any fetch join.
      *
-     * Single-key queries without a to-many path use a direct pageable entity query.
-     * To-many and composite-key queries use ID paging followed by entity loading.
+     * @param root the root of the caller's query
+     * @param query the caller's query
+     * @param cb the criteria builder
+     * @return the predicate, or null when every row matches
+     */
+    public Predicate matchingPredicate(Root<T> root, CriteriaQuery<?> query, CriteriaBuilder cb) {
+        return filter.matching(root, query, cb);
+    }
+
+    /** @return the filter of the search as a specification, without any fetch join */
+    public Specification<T> matchingSpecification() {
+        return filter.asSpecification();
+    }
+
+    /** @return whether the search narrows nothing: it has no condition and no scope */
+    public boolean isUnfiltered() {
+        return filter.isUnfiltered();
+    }
+
+    /** @return the sort of the search, ending in the primary key */
+    public Sort sort() {
+        return createSort();
+    }
+
+    /**
+     * Runs the search for one page.
+     *
+     * <p>A single-key entity whose fetches and sort stay off collections is read with one pageable
+     * entity query. Fetching or sorting through a collection, and a composite key, use ID paging
+     * followed by entity loading, so the page is cut in the database.
      */
     public Page<T> buildAndExecuteWithTwoPhaseOptimization() {
         PageRequest pageRequest = buildPageRequest();
+        Set<String> fetchFields = fetchFields();
 
-        // Collect all fetch fields (explicit + auto-detected)
-        Set<String> allFetchFields = new HashSet<>();
-
-        // Add explicitly specified fetch fields from SearchCondition
-        Set<String> explicitFetchFields = condition.getFetchFields();
-        if (explicitFetchFields != null && !explicitFetchFields.isEmpty()) {
-            allFetchFields.addAll(explicitFetchFields);
-            log.trace("Explicit fetch fields from SearchCondition: {}", explicitFetchFields);
-        }
-
-        // Add auto-detected common ToOne fields
-        Set<String> commonToOneFields = getCachedCommonToOneFields();
-        allFetchFields.addAll(commonToOneFields);
-
-        log.trace("All fetch fields for two-phase query: {}", allFetchFields);
-
-        Root<T> analysisRoot = createDummyRoot();
-        Set<String> paths = new HashSet<>(extractJoinPaths(condition.getNodes()));
-        paths.addAll(allFetchFields);
-        pageRequest.getSort().forEach(order -> paths.add(order.getProperty()));
-        boolean hasToMany = paths.stream().anyMatch(path -> relationshipAnalyzer.isToManyPath(analysisRoot, path));
-        boolean composite = SearchableFieldUtils.COMPOSITE_KEY_MARKER.equals(
+        boolean compositeKey = SearchableFieldUtils.COMPOSITE_KEY_MARKER.equals(
                 SearchableFieldUtils.getPrimaryKeyFieldName(entityManager, entityClass));
-        if (!hasToMany && !composite) {
+        boolean collectionInFetchOrSort = fetchFields.stream().anyMatch(this::traversesCollection)
+                || pageRequest.getSort().stream().anyMatch(order -> traversesCollection(order.getProperty()));
+        if (!compositeKey && !collectionInFetchOrSort) {
             Specification<T> direct = (root, query, cb) -> {
-                SpecificationQuerySupport.applyFetchJoins(root, query, allFetchFields);
-                return SpecificationQuerySupport.createPredicates(condition, entityManager, root, query, cb);
+                SpecificationQuerySupport.applyFetchJoins(root, query, fetchFields);
+                return filter.matching(root, query, cb);
             };
             return specificationExecutor.findAll(direct, pageRequest);
         }
-        return twoPhaseQueryExecutor.executeWithTwoPhaseOptimization(pageRequest, allFetchFields);
+        return twoPhaseQueryExecutor.executeWithTwoPhaseOptimization(pageRequest, fetchFields);
     }
 
+    /**
+     * Runs the search for one window of a scroll.
+     *
+     * <p>The window is cut by one statement over the entity, sorted by the search's sort and then
+     * the primary key. A keyset position continues after the last row of the previous window by
+     * comparing those sort values, so reaching a late window costs the same as the first. A sort
+     * value that is missing counts as the smallest value, which the sort requests explicitly.
+     *
+     * @param position where the window starts: {@code ScrollPosition.keyset()} or an offset for the
+     *                 first window, afterwards a position of the previous window
+     * @return the window
+     * @throws SearchableValidationException when the sort runs through a collection, or a keyset
+     *         position does not carry the values of this search's sort
+     * @throws SearchableOperationException when a keyset position is used for an entity whose
+     *         identifier is embedded
+     */
+    public Window<T> scroll(ScrollPosition position) {
+        Sort sort = plainSort(true);
+        int size = buildPageRequest().getPageSize();
+        if (position instanceof KeysetScrollPosition keyset) {
+            if (SearchableFieldUtils.entityKey(entityManager, entityClass).embedded()) {
+                throw new SearchableOperationException(MessageUtils.getMessage("scroll.embedded.id.unsupported",
+                        new Object[]{entityClass.getSimpleName()}));
+            }
+            Set<String> sorted = sort.stream().map(Sort.Order::getProperty).collect(Collectors.toSet());
+            if (!keyset.isInitial() && !keyset.getKeys().keySet().equals(sorted)) {
+                throw new SearchableValidationException(MessageUtils.getMessage("scroll.position.invalid"));
+            }
+        }
+        Specification<T> specification = (root, query, cb) -> {
+            SpecificationQuerySupport.applyFetchJoins(root, query, directToOneFields());
+            return filter.matching(root, query, cb);
+        };
+        return specificationExecutor.<T, Window<T>>findBy(specification,
+                found -> found.sortBy(sort).limit(size).scroll(position));
+    }
+
+    /**
+     * Runs the search for one page of a projection, selecting only what the projection reads.
+     *
+     * <p>An interface whose getters name attributes of the entity, or a record whose components do,
+     * is read with a statement that selects those columns. A getter that returns another projection
+     * loads the associated entity whole.
+     *
+     * @param projection the interface or record to return
+     * @param <P> its type
+     * @return the page
+     * @throws SearchableValidationException when the sort runs through a collection
+     */
+    public <P> Page<P> project(Class<P> projection) {
+        PageRequest requested = buildPageRequest();
+        PageRequest pageRequest = PageRequest.of(requested.getPageNumber(), requested.getPageSize(), plainSort(false));
+        return specificationExecutor.<T, Page<P>>findBy(filter.asSpecification(),
+                found -> found.as(projection).page(pageRequest));
+    }
+
+    /**
+     * The sort of the search for a statement over the entity alone: its orders, then the parts of
+     * the primary key not already among them.
+     *
+     * @param missingValuesFirst whether a missing value is ordered as the smallest value instead of
+     *                           wherever the database puts it
+     */
+    private Sort plainSort(boolean missingValuesFirst) {
+        List<Sort.Order> orders = new ArrayList<>();
+        SearchCondition.Sort sortCondition = condition.getSort();
+        if (sortCondition != null) {
+            for (SearchCondition.Order requested : sortCondition.getOrders()) {
+                Sort.Order order = createOrder(requested);
+                if (traversesCollection(order.getProperty())) {
+                    throw new SearchableValidationException(MessageUtils.getMessage("sort.collection.unsupported",
+                            new Object[]{requested.getField()}));
+                }
+                if (missingValuesFirst) {
+                    order = order.isAscending() ? order.nullsFirst() : order.nullsLast();
+                }
+                orders.add(order);
+            }
+        }
+        for (String keyPath : SearchableFieldUtils.entityKey(entityManager, entityClass).paths()) {
+            if (orders.stream().noneMatch(order -> order.getProperty().equals(keyPath))) {
+                orders.add(Sort.Order.asc(keyPath));
+            }
+        }
+        return Sort.by(orders);
+    }
 
     /** Fetches at most one root entity and does not issue a total-count query. */
     public Optional<T> buildAndExecuteFirst() {
-        Set<String> fetches = new HashSet<>(getCachedCommonToOneFields());
-        if (condition.getFetchFields() != null) fetches.addAll(condition.getFetchFields());
-        return twoPhaseQueryExecutor.executeFirst(buildPageRequest(), fetches);
+        return twoPhaseQueryExecutor.executeFirst(buildPageRequest(), fetchFields());
     }
 
-    /**
-     * Create a dummy root for path analysis without executing queries.
-     */
-    private Root<T> createDummyRoot() {
-        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-        CriteriaQuery<T> query = cb.createQuery(entityClass);
-        return query.from(entityClass);
+    private boolean traversesCollection(String path) {
+        return !SearchableFieldUtils.COMPOSITE_KEY_MARKER.equals(path)
+                && EntityPaths.traversesCollection(entityManager, entityClass, path);
     }
 
-    /**
-     * Get cached common ToOne fields to prevent redundant relationship analysis.
-     * Uses double-checked locking pattern for thread-safe lazy initialization.
-     */
-    private Set<String> getCachedCommonToOneFields() {
-        Set<String> result = cachedCommonToOneFields;
-        if (result == null) {
-            synchronized (cacheLock) {
-                result = cachedCommonToOneFields;
-                if (result == null) {
-                    result = relationshipAnalyzer.detectCommonToOneFields();
-                    cachedCommonToOneFields = result;
-                    log.trace("Cached common ToOne fields: {}", result);
-                }
-            }
+    /** The fetch fields the condition names together with the associations fetched with every list. */
+    private Set<String> fetchFields() {
+        Set<String> fields = new HashSet<>(commonToOneFields());
+        if (condition.getFetchFields() != null) {
+            fields.addAll(condition.getFetchFields());
         }
-        return result;
+        return fields;
+    }
+
+    private Set<String> commonToOneFields() {
+        if (commonToOneFields == null) {
+            commonToOneFields = relationshipAnalyzer.detectCommonToOneFields();
+        }
+        return commonToOneFields;
+    }
+
+    /** The to-one associations of the entity itself, which a single entity query can fetch. */
+    private Set<String> directToOneFields() {
+        return commonToOneFields().stream().filter(field -> !field.contains(".")).collect(Collectors.toSet());
     }
 
     private PageRequest buildPageRequest() {
@@ -349,5 +331,4 @@ public class SearchableSpecificationBuilder<T> {
 
         return PageRequest.of(page, size, createSort());
     }
-
 }

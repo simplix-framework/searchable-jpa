@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import dev.simplecore.searchable.core.exception.SearchableValidationException;
+import dev.simplecore.searchable.core.i18n.MessageUtils;
 import java.io.IOException;
 import lombok.Getter;
 
@@ -201,7 +203,8 @@ public enum SearchOperator {
             String value = p.getValueAsString();
             SearchOperator operator = SearchOperator.fromName(value);
             if (operator == null) {
-                throw new IllegalArgumentException("No enum constant " + SearchOperator.class.getName() + "." + value);
+                throw new SearchableValidationException(
+                        MessageUtils.getMessage("search.condition.operator.invalid", new Object[]{value}));
             }
             return operator;
         }

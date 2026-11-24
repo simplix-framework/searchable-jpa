@@ -23,7 +23,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.*;
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:bucket-audit;DB_CLOSE_DELAY=-1", "spring.jpa.properties.hibernate.connection.provider_disables_autocommit=false", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
+@SpringBootTest(properties={"searchable.test.h2-url=jdbc:h2:mem:bucket-audit;DB_CLOSE_DELAY=-1", "spring.jpa.properties.hibernate.connection.provider_disables_autocommit=false", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
 @ContextConfiguration(classes=BaseTestConfig.class)
 @Transactional
 public class TimeBucketRegressionTest {

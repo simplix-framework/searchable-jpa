@@ -1,10 +1,13 @@
 package dev.simplecore.searchable.openapi.generator;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.SearchConditionBuilder;
-import dev.simplecore.searchable.core.condition.builder.FirstCondition;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
+import dev.simplecore.searchable.core.exception.SearchableOperationException;
+import dev.simplecore.searchable.core.i18n.MessageUtils;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import dev.simplecore.searchable.openapi.utils.OpenApiDocUtils;
 import java.lang.reflect.Field;
@@ -19,124 +22,98 @@ import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-@RequiredArgsConstructor
+/**
+ * Builds the example search condition shown beside a search endpoint: the first searchable field of
+ * the DTO, with the first operator it allows.
+ *
+ * <p>The example is assembled directly and not through the validating builder. It illustrates the
+ * shape of a request, and a made-up value cannot be expected to satisfy the constraints a DTO puts
+ * on real ones.
+ */
 public class ExampleGenerator {
-    private static final Logger log = LoggerFactory.getLogger(ExampleGenerator.class);
 
+    private static final ObjectMapper EXAMPLE_READER = new ObjectMapper();
+    private static final int EXAMPLE_PAGE = 0;
+    private static final int EXAMPLE_SIZE = 10;
+
+    /**
+     * @param dtoClass the search DTO
+     * @return the example condition as JSON text
+     */
     public String generateSimpleExample(Class<?> dtoClass) {
         try {
-            SearchCondition<?> condition = buildSimpleCondition(dtoClass);
-            return condition.toJson();
-        } catch (Exception e) {
-            log.error("Error generating simple example: {}", e.getMessage(), e);
-            return "{}";
-        }
-    }
-
-    private SearchCondition<?> buildSimpleCondition(Class<?> dtoClass) {
-        SearchConditionBuilder<?> builder = SearchConditionBuilder.create(dtoClass);
-
-        builder.where(w -> {
-            Field firstField = findFirstSearchableField(dtoClass);
-            if (firstField != null) {
-                processSearchableField(firstField, w);
-            }
-        });
-
-        builder.page(0).size(10);
-        return builder.build();
-    }
-
-    private void processSearchableField(Field field, FirstCondition w) {
-        SearchableField searchableField = field.getAnnotation(SearchableField.class);
-        if (searchableField != null) {
-            applyOperator(SearchableFieldUtils.getAllowedOperators(searchableField)[0], field, w);
-        }
-    }
-
-    private void applyOperator(SearchOperator operator, Field field, FirstCondition w) {
-        String fieldName = field.getName();
-        switch (operator) {
-            case BETWEEN: {
-                List<Object> range = exampleRange(field, operator);
-                w.between(fieldName, range.get(0), range.get(1));
-                break;
-            }
-            case NOT_BETWEEN: {
-                List<Object> range = exampleRange(field, operator);
-                w.notBetween(fieldName, range.get(0), range.get(1));
-                break;
-            }
-            case IN:
-                w.in(fieldName, exampleValues(field, operator));
-                break;
-            case NOT_IN:
-                w.notIn(fieldName, exampleValues(field, operator));
-                break;
-            default:
-                applySingleValueOperator(operator, field, w);
-        }
-    }
-
-    private void applySingleValueOperator(SearchOperator operator, Field field, FirstCondition w) {
-        String fieldName = field.getName();
-        Object rawExampleValue = OpenApiDocUtils.getExampleValue(field);
-        Object exampleValue = rawExampleValue == null ? null : convertToTargetType(rawExampleValue, field.getType());
-        switch (operator) {
-            case NOT_EQUALS:
-                w.notEquals(fieldName, exampleValue);
-                break;
-            case GREATER_THAN:
-                w.greaterThan(fieldName, exampleValue);
-                break;
-            case GREATER_THAN_OR_EQUAL_TO:
-                w.greaterThanOrEqualTo(fieldName, exampleValue);
-                break;
-            case LESS_THAN:
-                w.lessThan(fieldName, exampleValue);
-                break;
-            case LESS_THAN_OR_EQUAL_TO:
-                w.lessThanOrEqualTo(fieldName, exampleValue);
-                break;
-            case CONTAINS:
-                w.contains(fieldName, String.valueOf(exampleValue));
-                break;
-            case NOT_CONTAINS:
-                w.notContains(fieldName, String.valueOf(exampleValue));
-                break;
-            case STARTS_WITH:
-                w.startsWith(fieldName, String.valueOf(exampleValue));
-                break;
-            case NOT_STARTS_WITH:
-                w.notStartsWith(fieldName, String.valueOf(exampleValue));
-                break;
-            case ENDS_WITH:
-                w.endsWith(fieldName, String.valueOf(exampleValue));
-                break;
-            case NOT_ENDS_WITH:
-                w.notEndsWith(fieldName, String.valueOf(exampleValue));
-                break;
-            case IS_NULL:
-                w.isNull(fieldName);
-                break;
-            case IS_NOT_NULL:
-                w.isNotNull(fieldName);
-                break;
-            case EQUALS:
-            default:
-                w.equals(fieldName, exampleValue);
+            return buildSimpleCondition(dtoClass).toJson();
+        } catch (JsonProcessingException e) {
+            throw new SearchableOperationException(
+                    MessageUtils.getMessage("openapi.example.failed", new Object[]{dtoClass.getName()}), e);
         }
     }
 
     /**
-     * Produces the two distinct bounds for a BETWEEN/NOT_BETWEEN example using the 2-arg example
-     * generator, converting each to the field's type.
+     * @param dtoClass the search DTO
+     * @return the example condition as a JSON object, so a document carries it as structured data
+     */
+    public Map<String, Object> generateExampleObject(Class<?> dtoClass) {
+        try {
+            return EXAMPLE_READER.readValue(generateSimpleExample(dtoClass),
+                    new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (JsonProcessingException e) {
+            throw new SearchableOperationException(
+                    MessageUtils.getMessage("openapi.example.failed", new Object[]{dtoClass.getName()}), e);
+        }
+    }
+
+    private SearchCondition<?> buildSimpleCondition(Class<?> dtoClass) {
+        SearchCondition<Object> condition = new SearchCondition<>();
+        List<Field> searchableFields = SearchableFieldUtils.getSearchableFields(dtoClass);
+        if (!searchableFields.isEmpty()) {
+            condition.getNodes().add(exampleCondition(searchableFields.get(0)));
+        }
+        condition.setPage(EXAMPLE_PAGE);
+        condition.setSize(EXAMPLE_SIZE);
+        return condition;
+    }
+
+    private SearchCondition.Condition exampleCondition(Field field) {
+        SearchOperator operator = SearchableFieldUtils.getAllowedOperators(field.getAnnotation(SearchableField.class))[0];
+        Object value = null;
+        Object value2 = null;
+        switch (operator) {
+            case BETWEEN:
+            case NOT_BETWEEN:
+                List<Object> range = exampleRange(field, operator);
+                value = range.get(0);
+                value2 = range.get(1);
+                break;
+            case IN:
+            case NOT_IN:
+                value = exampleValues(field, operator);
+                break;
+            case IS_NULL:
+            case IS_NOT_NULL:
+                break;
+            case CONTAINS:
+            case NOT_CONTAINS:
+            case STARTS_WITH:
+            case NOT_STARTS_WITH:
+            case ENDS_WITH:
+            case NOT_ENDS_WITH:
+                value = String.valueOf(OpenApiDocUtils.getExampleValue(field));
+                break;
+            default:
+                value = convertToTargetType(OpenApiDocUtils.getExampleValue(field), field.getType());
+        }
+        return new SearchCondition.Condition(null, field.getName(), operator, value, value2, null);
+    }
+
+    /**
+     * Produces the two distinct bounds for a BETWEEN/NOT_BETWEEN example, converting each to the
+     * field's type.
      */
     private List<Object> exampleRange(Field field, SearchOperator operator) {
         List<Object> converted = exampleValues(field, operator);
@@ -147,8 +124,8 @@ public class ExampleGenerator {
     }
 
     /**
-     * Produces the example values for a multi-value operator (IN/NOT_IN/BETWEEN) using the 2-arg
-     * example generator, converting each element to the field's type.
+     * Produces the example values for a multi-value operator (IN/NOT_IN/BETWEEN), converting each
+     * element to the field's type.
      */
     private List<Object> exampleValues(Field field, SearchOperator operator) {
         Object example = OpenApiDocUtils.getExampleValue(field, operator);
@@ -161,11 +138,6 @@ public class ExampleGenerator {
             values.add(convertToTargetType(example, field.getType()));
         }
         return values;
-    }
-
-    private Field findFirstSearchableField(Class<?> dtoClass) {
-        List<Field> searchableFields = SearchableFieldUtils.getSearchableFields(dtoClass);
-        return searchableFields.isEmpty() ? null : searchableFields.get(0);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

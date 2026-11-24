@@ -13,6 +13,8 @@ ext {
     versions = [
         // SpringDoc OpenAPI versions (not managed by Spring Boot)
         springdocOpenapiStarter: '3.2.0',
+        // The swagger-core release SpringDoc 3.2.0 is built on; the two move together
+        swaggerAnnotations: '2.2.55',
         
         // Other dependencies not managed by Spring Boot
         modelmapper: '3.2.8',
@@ -84,7 +86,7 @@ ext {
 
 allprojects {
     group = 'dev.simplecore.searchable'
-    version = '2.0.1-SNAPSHOT'
+    version = '2.1.0-SNAPSHOT'
 
     System.setProperty("spring.boot.version.check.enabled", "false")
 
@@ -123,6 +125,7 @@ subprojects {
             // SpringDoc OpenAPI versions (not managed by Spring Boot)
             dependency "org.springdoc:springdoc-openapi-starter-webmvc-ui:${rootProject.versions.springdocOpenapiStarter}"
             dependency "org.springdoc:springdoc-openapi-starter-webmvc-api:${rootProject.versions.springdocOpenapiStarter}"
+            dependency "io.swagger.core.v3:swagger-annotations-jakarta:${rootProject.versions.swaggerAnnotations}"
             
             // Other dependencies not managed by Spring Boot
             dependency "org.modelmapper:modelmapper:${rootProject.versions.modelmapper}"

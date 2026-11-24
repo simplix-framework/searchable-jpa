@@ -6,15 +6,17 @@ import jakarta.validation.constraints.Pattern;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 public class OpenApiDocUtils {
 
@@ -22,9 +24,9 @@ public class OpenApiDocUtils {
     private static final LocalDate FIXED_DATE = LocalDate.of(2025, 5, 1);
     private static final LocalTime FIXED_TIME = LocalTime.of(0, 0, 0);
     private static final Instant FIXED_INSTANT = FIXED_DATE_TIME.toInstant(ZoneOffset.UTC);
+    private static final int RANGE_EXAMPLE_DAYS = 7;
 
     private OpenApiDocUtils() {
-        throw new IllegalStateException("Utility class");
     }
 
     public static Schema getSchemaAnnotation(Field field) {
@@ -36,6 +38,17 @@ public class OpenApiDocUtils {
         return schema != null && !schema.description().isEmpty() ? schema.description() : field.getName();
     }
 
+    /**
+     * The values a {@code @Pattern} allows when the expression is a plain list of alternatives
+     * ({@code ACTIVE|INACTIVE}) or one character out of a set ({@code [YN]}).
+     *
+     * @return the allowed values, or an empty list when the pattern is anything else
+     */
+    public static List<String> patternAlternatives(Field field) {
+        Pattern pattern = field.getAnnotation(Pattern.class);
+        return pattern == null ? List.of() : PatternAlternatives.of(pattern.regexp());
+    }
+
     public static Object getExampleValue(Field field) {
         Schema schema = field.getAnnotation(Schema.class);
         if (schema != null && !schema.example().isEmpty()) {
@@ -45,7 +58,7 @@ public class OpenApiDocUtils {
     }
 
     public static Object getExampleValue(Field field, SearchOperator operator) {
-        if (operator == SearchOperator.BETWEEN) {
+        if (operator == SearchOperator.BETWEEN || operator == SearchOperator.NOT_BETWEEN) {
             return getBetweenExampleValue(field);
         } else if (isInOperation(operator)) {
             return getInExampleValue(field);
@@ -57,29 +70,42 @@ public class OpenApiDocUtils {
         return operator == SearchOperator.IN || operator == SearchOperator.NOT_IN;
     }
 
+    /**
+     * Two distinct bounds in the field's own type, so the range example is meaningful.
+     */
     private static Object getBetweenExampleValue(Field field) {
-        if (field.getType() == LocalDateTime.class) {
-            List<Object> objects = new ArrayList<>();
-            // Two distinct bounds so the range example is meaningful (start != end).
-            objects.add(FIXED_DATE_TIME);
-            objects.add(FIXED_DATE_TIME.plusDays(7));
-            return objects;
+        Class<?> type = field.getType();
+        if (type == LocalDateTime.class) {
+            return List.of(FIXED_DATE_TIME, FIXED_DATE_TIME.plusDays(RANGE_EXAMPLE_DAYS));
         }
-        List<Integer> integers = new ArrayList<>();
-        integers.add(1);
-        integers.add(100);
-        return integers;
+        if (type == LocalDate.class) {
+            return List.of(FIXED_DATE, FIXED_DATE.plusDays(RANGE_EXAMPLE_DAYS));
+        }
+        if (type == LocalTime.class) {
+            return List.of(FIXED_TIME, FIXED_TIME.plusHours(RANGE_EXAMPLE_DAYS));
+        }
+        if (type == Instant.class) {
+            return List.of(FIXED_INSTANT, FIXED_INSTANT.plus(Duration.ofDays(RANGE_EXAMPLE_DAYS)));
+        }
+        if (type == OffsetDateTime.class) {
+            OffsetDateTime start = FIXED_DATE_TIME.atOffset(ZoneOffset.UTC);
+            return List.of(start, start.plusDays(RANGE_EXAMPLE_DAYS));
+        }
+        if (type == ZonedDateTime.class) {
+            ZonedDateTime start = FIXED_DATE_TIME.atZone(ZoneOffset.UTC);
+            return List.of(start, start.plusDays(RANGE_EXAMPLE_DAYS));
+        }
+        if (Number.class.isAssignableFrom(type) || type.isPrimitive()) {
+            return List.of(1, 100);
+        }
+        Object single = getExampleValue(field);
+        return List.of(single, single);
     }
 
     private static Object getInExampleValue(Field field) {
-        if (field.isAnnotationPresent(Pattern.class)) {
-            Pattern patternAnnotation = field.getAnnotation(Pattern.class);
-            if ("^[YN]$".equals(patternAnnotation.regexp())) {
-                List<String> strings = new ArrayList<>();
-                strings.add("Y");
-                strings.add("N");
-                return strings;
-            }
+        List<String> alternatives = patternAlternatives(field);
+        if (alternatives.size() > 1) {
+            return new ArrayList<>(alternatives.subList(0, 2));
         }
         List<Object> objects = new ArrayList<>();
         objects.add(getExampleValue(field));
@@ -99,7 +125,7 @@ public class OpenApiDocUtils {
         if (type == LocalTime.class) return FIXED_TIME;
         if (type == Instant.class) return FIXED_INSTANT;
         if (type.isEnum()) return type.getEnumConstants()[0];
-        if (Collection.class.isAssignableFrom(type) || Set.class.isAssignableFrom(type)) {
+        if (Collection.class.isAssignableFrom(type)) {
             return getCollectionElementExampleValue(field);
         }
         return "example";
@@ -117,22 +143,6 @@ public class OpenApiDocUtils {
             }
         }
         return "example";
-    }
-
-    public static String toCamelCase(String input) {
-        if (input == null || input.isEmpty()) {
-            return input;
-        }
-        String[] words = input.split("[\\W_]+");
-        StringBuilder builder = new StringBuilder();
-        builder.append(words[0].toLowerCase());
-        for (int i = 1; i < words.length; i++) {
-            if (!words[i].isEmpty()) {
-                builder.append(Character.toUpperCase(words[i].charAt(0)))
-                        .append(words[i].substring(1).toLowerCase());
-            }
-        }
-        return builder.toString();
     }
 
     public static String getOperationDescription(SearchOperator operator) {

@@ -108,4 +108,41 @@ public @interface SearchableField {
      * @return true if the keyword search matches against this field
      */
     boolean keyword() default false;
+
+    /**
+     * Whether text comparisons on this field ignore case. Applies to {@code String} fields.
+     *
+     * <p>Example:
+     * <pre>
+     * // code.equals=ab-12 also finds AB-12
+     * {@literal @}SearchableField(operators = {SearchOperator.EQUALS}, caseSensitivity = CaseSensitivity.INSENSITIVE)
+     * private String code;
+     * </pre>
+     *
+     * @return how case is treated for this field
+     */
+    CaseSensitivity caseSensitivity() default CaseSensitivity.DEFAULT;
+
+    /**
+     * How a condition on this field is matched when its {@link #entityField()} runs through a
+     * collection. Has no effect on a field that is not reached through a collection.
+     *
+     * <p>Example:
+     * <pre>
+     * // withoutTag.equals=draft finds the posts none of whose tags is named "draft"
+     * {@literal @}SearchableField(entityField = "tags.name", operators = {SearchOperator.EQUALS}, match = CollectionMatch.NONE)
+     * private String withoutTag;
+     * </pre>
+     *
+     * @return how elements of the collection are matched
+     */
+    CollectionMatch match() default CollectionMatch.JOINED;
+
+    /**
+     * Whether this field may be grouped by and aggregated through the DTO-aware aggregate entry
+     * points. Counting per value returns the values themselves, so a field is opted in explicitly.
+     *
+     * @return true if the field may be used as a group key or an aggregate target
+     */
+    boolean aggregatable() default false;
 }

@@ -4,11 +4,12 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +31,6 @@ public class TestDataManager {
     
     private static final String SMALL_DATASET_PATH = "test-data/small";
     private static final String[] TABLE_NAMES = {"test_author", "test_post", "test_comment", "test_tag", "test_post_tag"};
-    private static final String[] CSV_FILES = {"test_author.csv", "test_post.csv", "test_comment.csv", "test_tag.csv", "test_post_tags.csv"};
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -74,11 +74,44 @@ public class TestDataManager {
         
         // H2 auto-creates tables via JPA, just load data
         loadSmallDataset();
-
+        restartIdentitiesAfterLoadedKeys();
         
         log.info("H2 test data initialization complete");
     }
     
+    /**
+     * Moves every identity column past the keys the CSV files brought in. H2 does not advance an
+     * identity for a row inserted with its key given, so the next generated key would be 1 again
+     * and collide with a loaded row. SQL Server advances it by itself.
+     */
+    private void restartIdentitiesAfterLoadedKeys() {
+        jdbcTemplate.execute((Connection connection) -> {
+            for (String table : TABLE_NAMES) {
+                String keyColumn = null;
+                try (ResultSet columns = connection.getMetaData().getColumns(connection.getCatalog(), null, null, null)) {
+                    while (columns.next()) {
+                        if (table.equalsIgnoreCase(columns.getString("TABLE_NAME"))
+                                && "YES".equals(columns.getString("IS_AUTOINCREMENT"))) {
+                            keyColumn = columns.getString("COLUMN_NAME");
+                        }
+                    }
+                }
+                if (keyColumn == null) {
+                    continue;
+                }
+                try (Statement statement = connection.createStatement()) {
+                    long next;
+                    try (ResultSet highest = statement.executeQuery("SELECT COALESCE(MAX(" + keyColumn + "), 0) + 1 FROM " + table)) {
+                        highest.next();
+                        next = highest.getLong(1);
+                    }
+                    statement.execute("ALTER TABLE " + table + " ALTER COLUMN " + keyColumn + " RESTART WITH " + next);
+                }
+            }
+            return null;
+        });
+    }
+
     /**
      * Non-H2 database initialization - check data only (JPA handles table creation)
      */
@@ -103,19 +136,13 @@ public class TestDataManager {
     private DatabaseType detectDatabaseType() throws SQLException {
         String databaseProductName;
         try (Connection connection = dataSource.getConnection()) {
-            databaseProductName = connection.getMetaData().getDatabaseProductName().toLowerCase();
+            databaseProductName = connection.getMetaData().getDatabaseProductName().toLowerCase(Locale.ROOT);
         }
 
         if (databaseProductName.contains("h2")) {
             return DatabaseType.H2;
         } else if (databaseProductName.contains("microsoft") || databaseProductName.contains("sql server")) {
             return DatabaseType.MSSQL;
-        } else if (databaseProductName.contains("mysql")) {
-            return DatabaseType.MYSQL;
-        } else if (databaseProductName.contains("postgresql")) {
-            return DatabaseType.POSTGRESQL;
-        } else if (databaseProductName.contains("oracle")) {
-            return DatabaseType.ORACLE;
         } else {
             return DatabaseType.OTHER;
         }
@@ -189,15 +216,6 @@ public class TestDataManager {
             case MSSQL:
                 loadCsvDataMSSQL(resource, tableName);
                 break;
-            case MYSQL:
-                loadCsvDataMySQL(resource, tableName);
-                break;
-            case POSTGRESQL:
-                loadCsvDataPostgreSQL(resource, tableName);
-                break;
-            case ORACLE:
-                loadCsvDataOracle(resource, tableName);
-                break;
             default:
                 // Unknown database type
                 log.error("Unknown database type, CSV direct loading is not supported for {}", tableName);
@@ -221,7 +239,7 @@ public class TestDataManager {
         try {
             // First try direct file access
             String csvPath = resource.getFile().getAbsolutePath();
-            String sql = buildH2CsvInsertQuery(tableName, csvPath);
+            String sql = CsvInsertStatements.h2InsertFromCsv(tableName, csvPath);
             jdbcTemplate.execute(sql);
             log.info("H2: Loaded CSV data for {} using direct file access", tableName);
             
@@ -231,7 +249,7 @@ public class TestDataManager {
             try {
                 // Try using classpath URL
                 String csvUrl = resource.getURL().toString();
-                String sql = buildH2CsvInsertQuery(tableName, csvUrl);
+                String sql = CsvInsertStatements.h2InsertFromCsv(tableName, csvUrl);
                 jdbcTemplate.execute(sql);
                 log.info("H2: Loaded CSV data for {} using classpath URL", tableName);
                 
@@ -240,50 +258,6 @@ public class TestDataManager {
                 log.error("H2: All CSV loading methods failed for {}", tableName);
                 throw new RuntimeException("Failed to load CSV data for " + tableName + " in H2", e2);
             }
-        }
-    }
-    
-    /**
-     * Build H2 CSV insert query with proper column mapping
-     */
-    private String buildH2CsvInsertQuery(String tableName, String csvPath) {
-        switch (tableName) {
-            case "test_author":
-                return String.format(
-                    "INSERT INTO %s (author_id, name, email, nickname, description, created_at, updated_at, created_by, updated_by) " +
-                    "SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
-            case "test_post":
-                return String.format(
-                    "INSERT INTO %s (post_id, title, content, status, view_count, like_count, author_id, created_at, updated_at, created_by, updated_by) " +
-                    "SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
-            case "test_tag":
-                return String.format(
-                    "INSERT INTO %s (tag_id, name, description, color, created_at, updated_at, created_by, updated_by) " +
-                    "SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
-            case "test_comment":
-                return String.format(
-                    "INSERT INTO %s (comment_id, content, author_id, post_id, created_at, updated_at, created_by, updated_by) " +
-                    "SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
-            case "test_post_tag":
-                return String.format(
-                    "INSERT INTO %s (post_id, tag_id) " +
-                    "SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
-            default:
-                // Generic fallback
-                return String.format(
-                    "INSERT INTO %s SELECT * FROM CSVREAD('%s', NULL, 'charset=UTF-8 fieldSeparator=,')", 
-                    tableName, csvPath
-                );
         }
     }
     
@@ -316,7 +290,7 @@ public class TestDataManager {
                     continue;
                 }
                 
-                String insertSql = buildInsertStatement(tableName, line);
+                String insertSql = CsvInsertStatements.insertStatement(tableName, line);
                 if (insertSql != null) {
                     batchStatements.add(insertSql);
                     batchCount++;
@@ -357,102 +331,6 @@ public class TestDataManager {
     }
     
     /**
-     * Build INSERT statement for MSSQL
-     */
-    private String buildInsertStatement(String tableName, String csvLine) {
-        Object[] values = parseCsvLine(csvLine);
-        
-        switch (tableName) {
-            case "test_author":
-                if (values.length >= 9) {
-                    return String.format(
-                        "INSERT INTO test_author (author_id, name, email, nickname, description, created_at, updated_at, created_by, updated_by) " +
-                        "VALUES (%s, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-                        values[0],
-                        escapeSqlString(values[1].toString()),
-                        escapeSqlString(values[2].toString()),
-                        escapeSqlString(values[3].toString()),
-                        escapeSqlString(values[4].toString()),
-                        values[5], values[6],
-                        escapeSqlString(values[7].toString()),
-                        escapeSqlString(values[8].toString())
-                    );
-                }
-                break;
-            case "test_post":
-                if (values.length >= 11) {
-                    return String.format(
-                        "INSERT INTO test_post (post_id, title, content, status, view_count, like_count, author_id, created_at, updated_at, created_by, updated_by) " +
-                        "VALUES (%s, '%s', '%s', '%s', %s, %s, %s, '%s', '%s', '%s', '%s')",
-                        values[0],
-                        escapeSqlString(values[1].toString()),
-                        escapeSqlString(values[2].toString()),
-                        escapeSqlString(values[3].toString()),
-                        values[4], values[5], values[6],
-                        values[7], values[8],
-                        escapeSqlString(values[9].toString()),
-                        escapeSqlString(values[10].toString())
-                    );
-                }
-                break;
-            case "test_tag":
-                if (values.length >= 8) {
-                    return String.format(
-                        "INSERT INTO test_tag (tag_id, name, description, color, created_at, updated_at, created_by, updated_by) " +
-                        "VALUES (%s, '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-                        values[0],
-                        escapeSqlString(values[1].toString()),
-                        escapeSqlString(values[2].toString()),
-                        escapeSqlString(values[3].toString()),
-                        values[4], values[5],
-                        escapeSqlString(values[6].toString()),
-                        escapeSqlString(values[7].toString())
-                    );
-                }
-                break;
-            case "test_comment":
-                if (values.length >= 8) {
-                    return String.format(
-                        "INSERT INTO test_comment (comment_id, content, author_id, post_id, created_at, updated_at, created_by, updated_by) " +
-                        "VALUES (%s, '%s', %s, %s, '%s', '%s', '%s', '%s')",
-                        values[0],
-                        escapeSqlString(values[1].toString()),
-                        values[2], values[3],
-                        values[4], values[5],
-                        escapeSqlString(values[6].toString()),
-                        escapeSqlString(values[7].toString())
-                    );
-                }
-                break;
-            case "test_post_tag":
-                if (values.length >= 2) {
-                    return String.format(
-                        "INSERT INTO test_post_tag (post_id, tag_id) VALUES (%s, %s)",
-                        values[0], values[1]
-                    );
-                }
-                break;
-        }
-        
-        log.warn("MSSQL: Unable to build INSERT statement for {} with {} values", tableName, values.length);
-        return null;
-    }
-    
-    /**
-     * Escape SQL string values and convert \n back to actual newlines
-     */
-    private String escapeSqlString(String value) {
-        if (value == null) {
-            return "";
-        }
-        // Convert \n string representation back to actual newlines
-        value = value.replace("\\n", "\n");
-        value = value.replace("\\r", "\r");
-        
-        return value.replace("'", "''");
-    }
-    
-    /**
      * Execute batch statements
      */
     private void executeBatch(List<String> statements) {
@@ -466,86 +344,9 @@ public class TestDataManager {
     }
     
     /**
-     * Load CSV data for MySQL database
-     */
-    private void loadCsvDataMySQL(ClassPathResource resource, String tableName) throws IOException {
-        try {
-            String csvPath = resource.getFile().getAbsolutePath();
-            String sql = String.format(
-                "LOAD DATA INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' LINES TERMINATED BY '\\n' IGNORE 1 ROWS",
-                csvPath, tableName
-            );
-            jdbcTemplate.execute(sql);
-            log.info("MySQL: Loaded CSV data for {} using LOAD DATA INFILE", tableName);
-        } catch (Exception e) {
-            log.error("MySQL: LOAD DATA INFILE failed for {}: {}", tableName, e.getMessage());
-            throw new RuntimeException("Failed to load CSV data for " + tableName + " in MySQL", e);
-        }
-    }
-    
-    /**
-     * Load CSV data for PostgreSQL database
-     */
-    private void loadCsvDataPostgreSQL(ClassPathResource resource, String tableName) throws IOException {
-        try {
-            String csvPath = resource.getFile().getAbsolutePath();
-            String sql = String.format(
-                "COPY %s FROM '%s' WITH (FORMAT csv, HEADER true)",
-                tableName, csvPath
-            );
-            jdbcTemplate.execute(sql);
-            log.info("PostgreSQL: Loaded CSV data for {} using COPY", tableName);
-        } catch (Exception e) {
-            log.error("PostgreSQL: COPY command failed for {}: {}", tableName, e.getMessage());
-            throw new RuntimeException("Failed to load CSV data for " + tableName + " in PostgreSQL", e);
-        }
-    }
-    
-    /**
-     * Load CSV data for Oracle database
-     */
-    private void loadCsvDataOracle(ClassPathResource resource, String tableName) throws IOException {
-        // Oracle doesn't have a simple CSV import functionality like other databases
-        log.error("Oracle: CSV direct loading is not supported for {}", tableName);
-        throw new RuntimeException("CSV direct loading is not supported for Oracle database. Please use a different approach for " + tableName);
-    }
-    
-    
-    
-    /**
-     * Parse CSV line into values
-     */
-    private Object[] parseCsvLine(String line) {
-        List<String> values = new ArrayList<>();
-        boolean inQuotes = false;
-        StringBuilder current = new StringBuilder();
-        
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-            
-            if (c == '"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    current.append('"');
-                    i++; // Skip next quote
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (c == ',' && !inQuotes) {
-                values.add(current.toString().trim());
-                current = new StringBuilder();
-            } else {
-                current.append(c);
-            }
-        }
-        values.add(current.toString().trim());
-        
-        return values.toArray();
-    }
-    
-    /**
      * Database type enumeration
      */
     private enum DatabaseType {
-        H2, MSSQL, MYSQL, POSTGRESQL, ORACLE, OTHER
+        H2, MSSQL, OTHER
     }
 } 

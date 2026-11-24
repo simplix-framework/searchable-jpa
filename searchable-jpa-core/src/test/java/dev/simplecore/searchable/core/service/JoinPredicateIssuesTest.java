@@ -114,8 +114,7 @@ class JoinPredicateIssuesTest {
         condition.getNodes().add(new SearchCondition.Condition(
                 null, "managerName", SearchOperator.EQUALS, "Boss", null, "author.manager.name"));
 
-        // countWithSearch goes through buildSpecification -> JoinStrategyManager.applyJoins, which is
-        // where the dotted ToOne path previously threw IllegalArgumentException.
+        // A count resolves the dotted to-one path by joining each association it runs through.
         long count = testPostService.countWithSearch(condition);
 
         // All posts are authored by Alice, whose manager is Boss.

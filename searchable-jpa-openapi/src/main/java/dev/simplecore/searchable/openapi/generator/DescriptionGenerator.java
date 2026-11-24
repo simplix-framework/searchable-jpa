@@ -3,23 +3,27 @@ package dev.simplecore.searchable.openapi.generator;
 import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
-import dev.simplecore.searchable.openapi.utils.OpenApiDocUtils;
 import io.swagger.v3.oas.models.Operation;
 import java.lang.reflect.Field;
 import java.util.StringJoiner;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class DescriptionGenerator {
-    private static final Logger log = LoggerFactory.getLogger(DescriptionGenerator.class);
 
+    /**
+     * Adds the summary of searchable fields to the operation's description. A description the
+     * application wrote stays in front of it.
+     */
     public static void customizeOperation(Operation operation, Class<?> dtoClass) {
-        String description = generateDescription(dtoClass);
-        operation.setDescription(description);
+        String summary = generateDescription(dtoClass);
+        String written = operation.getDescription();
+        if (written == null || written.isBlank()) {
+            operation.setDescription(summary);
+        } else if (!written.contains(summary)) {
+            operation.setDescription(written + "\n\n" + summary);
+        }
     }
 
     static String generateDescription(Class<?> dtoClass) {
-        log.trace("Generating OpenAPI description for DTO class: {}", dtoClass.getSimpleName());
         StringBuilder description = new StringBuilder();
         appendSearchFieldSummary(dtoClass, description);
         return description.toString();
@@ -33,7 +37,7 @@ public class DescriptionGenerator {
             SearchableField searchOp = field.getAnnotation(SearchableField.class);
             StringJoiner opJoiner = new StringJoiner("|");
             for (SearchOperator op : SearchableFieldUtils.getAllowedOperators(searchOp)) {
-                opJoiner.add(OpenApiDocUtils.toCamelCase(op.name().toLowerCase()));
+                opJoiner.add(op.getName());
             }
             String sortIndicator = searchOp.sortable() ? " [sortable]" : "";
             fieldJoiner.add(String.format("`%s` (%s)%s", field.getName(), opJoiner, sortIndicator));

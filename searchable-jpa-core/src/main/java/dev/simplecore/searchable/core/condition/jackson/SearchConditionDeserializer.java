@@ -18,24 +18,22 @@ import dev.simplecore.searchable.core.condition.SearchCondition.Sort;
 import dev.simplecore.searchable.core.condition.validator.SearchConditionValidator;
 import dev.simplecore.searchable.core.condition.validator.SearchRequestLimits;
 import dev.simplecore.searchable.core.condition.validator.SearchableFieldValidator;
+import dev.simplecore.searchable.core.exception.SearchableConfigurationException;
 import dev.simplecore.searchable.core.exception.SearchableValidationException;
 import dev.simplecore.searchable.core.exception.SearchableException;
 import dev.simplecore.searchable.core.i18n.MessageUtils;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import java.io.IOException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class SearchConditionDeserializer extends JsonDeserializer<SearchCondition<?>> implements ContextualDeserializer {
-    
-    private static final Logger log = LoggerFactory.getLogger(SearchConditionDeserializer.class);
+
     private Class<?> dtoClass;
     
     @Override
     public JsonDeserializer<?> createContextual(DeserializationContext ctxt, BeanProperty property) {
         JavaType type = (property == null) ? ctxt.getContextualType() : property.getType();
         if (type == null || type.containedTypeCount() == 0) {
-            throw new IllegalStateException("Generic type information is not available. Make sure the SearchCondition is properly typed.");
+            throw new SearchableConfigurationException(MessageUtils.getMessage("search.condition.type.unresolved"));
         }
         
         SearchConditionDeserializer contextual = new SearchConditionDeserializer();
@@ -57,8 +55,6 @@ public class SearchConditionDeserializer extends JsonDeserializer<SearchConditio
 
     @SuppressWarnings("unchecked")
     private SearchCondition<?> readCondition(JsonParser p, DeserializationContext ctxt) throws IOException {
-        log.trace("SearchConditionDeserializer.deserialize called");
-        
         ObjectMapper mapper = (ObjectMapper) p.getCodec();
         JsonNode jsonNode = mapper.readTree(p);
         
@@ -71,7 +67,11 @@ public class SearchConditionDeserializer extends JsonDeserializer<SearchConditio
                 throw new SearchableValidationException(
                         MessageUtils.getMessage("search.condition.conditions.not.array"));
             }
-            if (conditionsNode.size() > 1000) throw new SearchableValidationException("Search exceeds maximum node count 1000");
+            int mostNodes = SearchRequestLimits.structureLimits().maxNodes();
+            if (conditionsNode.size() > mostNodes) {
+                throw new SearchableValidationException(
+                        MessageUtils.getMessage("limits.nodes", new Object[]{String.valueOf(mostNodes)}));
+            }
             for (JsonNode conditionNode : conditionsNode) {
                 NodeDeserializer nodeDeserializer = new NodeDeserializer();
                 nodeDeserializer.setDtoClass(dtoClass);
@@ -101,7 +101,8 @@ public class SearchConditionDeserializer extends JsonDeserializer<SearchConditio
             Sort mapped = new Sort();
             for (SearchCondition.Order order : searchCondition.getSort().getOrders()) {
                 if (order == null || order.getDirection() == null) {
-                    throw new SearchableValidationException("Sort direction must be asc or desc");
+                    throw new SearchableValidationException(
+                            MessageUtils.getMessage("search.condition.sort.direction.invalid"));
                 }
                 mapped.addOrder(new SearchCondition.Order(order.getField(), order.getDirection(),
                         SearchableFieldUtils.getSortFieldFromDto(dtoClass, order.getField())));
@@ -113,7 +114,6 @@ public class SearchConditionDeserializer extends JsonDeserializer<SearchConditio
 
         // Only validate if DTO class is available
         if (dtoClass != null) {
-            log.trace("Using DTO class in deserializer: {}", dtoClass.getName());
             Class<Object> typedDtoClass = (Class<Object>) dtoClass;
             
             // First validate @SearchableField annotations
@@ -133,10 +133,7 @@ public class SearchConditionDeserializer extends JsonDeserializer<SearchConditio
 
     private void setEntityFieldsRecursively(Node node, Class<?> dtoClass) {
         if (node instanceof Condition) {
-            Condition condition = (Condition) node;
-            String fieldName = condition.getField();
-            
-            condition.setEntityField(SearchableFieldUtils.getEntityFieldFromDto(dtoClass, fieldName));
+            SearchableFieldUtils.applyDtoMapping((Condition) node, dtoClass);
         } else if (node instanceof Group) {
             Group group = (Group) node;
             for (Node childNode : group.getNodes()) {

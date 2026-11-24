@@ -15,6 +15,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class ParameterGenerator {
+    private static final String PAGE_PARAM = "page";
+    private static final String SIZE_PARAM = "size";
+    private static final String SORT_PARAM = "sort";
+
     private final ParameterSchemaGenerator schemaGenerator;
 
     public ParameterGenerator() {
@@ -47,20 +51,16 @@ public class ParameterGenerator {
             String fieldDescription = getFieldDescription(field);
 
             for (SearchOperator operator : SearchableFieldUtils.getAllowedOperators(searchableField)) {
-                String paramName = String.format("%s.%s",
-                        fieldName,
-                        OpenApiDocUtils.toCamelCase(operator.name().toLowerCase()));
+                String paramName = fieldName + "." + operator.getName();
 
                 Schema<?> schema = schemaGenerator.createFieldParameterSchema(field, operator);
 
-                Parameter parameter = new Parameter()
+                add(operation, new Parameter()
                         .name(paramName)
                         .in("query")
                         .description(getOperatorDescription(fieldDescription, operator))
                         .schema(schema)
-                        .required(false);
-
-                operation.getParameters().add(parameter);
+                        .required(false));
             }
         }
     }
@@ -72,7 +72,7 @@ public class ParameterGenerator {
                 .collect(Collectors.toList());
 
         if (!keywordFields.isEmpty()) {
-            operation.getParameters().add(new Parameter()
+            add(operation, new Parameter()
                     .name(SearchableParamsParser.KEYWORD_PARAM)
                     .in("query")
                     .description("Matches a record when any of these fields contains the text: " +
@@ -83,16 +83,16 @@ public class ParameterGenerator {
     }
 
     private void addPaginationParameters(Operation operation) {
-        operation.getParameters().add(new Parameter()
-                .name("page")
+        add(operation, new Parameter()
+                .name(PAGE_PARAM)
                 .in("query")
                 .description("Page number (0-based)")
                 .schema(schemaGenerator.createPageSchema())
                 .example(0)
                 .required(false));
 
-        operation.getParameters().add(new Parameter()
-                .name("size")
+        add(operation, new Parameter()
+                .name(SIZE_PARAM)
                 .in("query")
                 .description("Items per page")
                 .schema(schemaGenerator.createSizeSchema())
@@ -107,14 +107,28 @@ public class ParameterGenerator {
                 .collect(Collectors.toList());
 
         if (!sortableFields.isEmpty()) {
-            operation.getParameters().add(new Parameter()
-                    .name("sort")
+            // One comma-separated value (sort=a.asc,b.desc), which is the form the parser reads.
+            add(operation, new Parameter()
+                    .name(SORT_PARAM)
                     .in("query")
-                    .description("Sort fields (e.g., field.asc or field.desc). Available fields: " +
+                    .description("Sort fields, comma-separated (e.g., field.asc,other.desc). Available fields: " +
                             String.join(", ", sortableFields))
                     .schema(schemaGenerator.createSortSchema())
-                    .explode(true)
+                    .style(Parameter.StyleEnum.FORM)
+                    .explode(false)
                     .required(false));
+        }
+    }
+
+    /**
+     * Adds a parameter unless the operation already documents one of that name, so customizing an
+     * operation twice leaves one entry per parameter.
+     */
+    private static void add(Operation operation, Parameter parameter) {
+        boolean documented = operation.getParameters().stream()
+                .anyMatch(existing -> parameter.getName().equals(existing.getName()));
+        if (!documented) {
+            operation.getParameters().add(parameter);
         }
     }
 

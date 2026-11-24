@@ -1,28 +1,17 @@
 package dev.simplecore.searchable.core.utils;
 
+import dev.simplecore.searchable.core.annotation.CollectionMatch;
 import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.SearchCondition;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
-import jakarta.persistence.EmbeddedId;
+import dev.simplecore.searchable.core.utils.SearchableDtoMetadata.SearchField;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.Id;
-import jakarta.persistence.metamodel.EntityType;
-import jakarta.persistence.metamodel.SingularAttribute;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class SearchableFieldUtils {
-    private static final Logger log = LoggerFactory.getLogger(SearchableFieldUtils.class);
 
     /**
      * Marker returned by {@link #getPrimaryKeyFieldName(EntityManager, Class)} for composite-key
@@ -32,26 +21,16 @@ public class SearchableFieldUtils {
      */
     public static final String COMPOSITE_KEY_MARKER = "__COMPOSITE_KEY__";
 
-    // Static caches for entity metadata to avoid repeated metamodel/reflection calls
-    private static final ConcurrentHashMap<String, String> PRIMARY_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, List<String>> COMPOSITE_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Boolean> EMBEDDED_ID_CACHE = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, String> EMBEDDED_ID_ATTR_CACHE = new ConcurrentHashMap<>();
-
-    // Sentinel stored in EMBEDDED_ID_ATTR_CACHE for entities that do not use @EmbeddedId
-    // (ConcurrentHashMap cannot store null values).
-    private static final String NO_EMBEDDED_ID = "\u0000__NO_EMBEDDED_ID__";
+    // Keys by entity class name. The values hold names only, so an entry outlives neither a
+    // reloaded class nor the persistence unit it was read from.
+    private static final ConcurrentHashMap<String, EntityKey> ENTITY_KEYS = new ConcurrentHashMap<>();
 
     /**
-     * Clears all static caches. Use this method in test setup when using @DirtiesContext
+     * Clears the cached entity keys. Use this method in test setup when using @DirtiesContext
      * to ensure test isolation.
      */
     public static void clearCache() {
-        PRIMARY_KEY_CACHE.clear();
-        COMPOSITE_KEY_CACHE.clear();
-        EMBEDDED_ID_CACHE.clear();
-        EMBEDDED_ID_ATTR_CACHE.clear();
-        log.trace("SearchableFieldUtils caches cleared");
+        ENTITY_KEYS.clear();
     }
 
     /** An empty operator declaration allows every operator; value/type validation still applies. */
@@ -63,13 +42,32 @@ public class SearchableFieldUtils {
         if (dtoClass == null) {
             return field;
         }
+        SearchField declared = SearchableDtoMetadata.of(dtoClass).field(field);
+        return declared == null ? field : declared.entityField();
+    }
 
-        Field dtoField = findFieldInHierarchy(dtoClass, field);
-        if (dtoField == null) {
-            return field;
+    /**
+     * Fills in what the DTO declares for the field a condition names: the entity path, whether text
+     * comparisons ignore case, and how a path through a collection is matched. A condition on a
+     * field the DTO does not declare keeps its own field name as the path.
+     *
+     * @param condition the condition to complete
+     * @param dtoClass  the DTO the condition's field belongs to, or null to leave the name as the path
+     */
+    public static void applyDtoMapping(SearchCondition.Condition condition, Class<?> dtoClass) {
+        SearchField declared = dtoClass == null ? null : SearchableDtoMetadata.of(dtoClass).field(condition.getField());
+        if (declared == null) {
+            condition.setEntityField(condition.getField());
+            return;
         }
-        SearchableField annotation = dtoField.getAnnotation(SearchableField.class);
-        return annotation != null && !annotation.entityField().isEmpty() ? annotation.entityField() : field;
+        condition.setEntityField(declared.entityField());
+        condition.setCaseInsensitive(switch (declared.annotation().caseSensitivity()) {
+            case INSENSITIVE -> Boolean.TRUE;
+            case SENSITIVE -> Boolean.FALSE;
+            case DEFAULT -> null;
+        });
+        CollectionMatch match = declared.annotation().match();
+        condition.setMatch(match == CollectionMatch.JOINED ? null : match);
     }
 
     /**
@@ -104,18 +102,11 @@ public class SearchableFieldUtils {
         if (dtoClass == null) {
             return new ArrayList<>();
         }
-
-        Map<String, Field> fieldsByName = new LinkedHashMap<>();
-        Class<?> currentClass = dtoClass;
-        while (currentClass != null && currentClass != Object.class) {
-            for (Field field : currentClass.getDeclaredFields()) {
-                if (field.isAnnotationPresent(SearchableField.class)) {
-                    fieldsByName.putIfAbsent(field.getName(), field);
-                }
-            }
-            currentClass = currentClass.getSuperclass();
+        List<Field> fields = new ArrayList<>();
+        for (SearchField declared : SearchableDtoMetadata.of(dtoClass).fields()) {
+            fields.add(declared.field());
         }
-        return new ArrayList<>(fieldsByName.values());
+        return fields;
     }
 
     /**
@@ -131,374 +122,65 @@ public class SearchableFieldUtils {
             return field;
         }
 
-        Field dtoField = findFieldInHierarchy(dtoClass, field);
-        if (dtoField != null) {
-            SearchableField annotation = dtoField.getAnnotation(SearchableField.class);
-            if (annotation != null) {
-                // First priority: sortField attribute
-                if (!annotation.sortField().isEmpty()) {
-                    return annotation.sortField();
-                }
-                // Second priority: entityField attribute
-                if (!annotation.entityField().isEmpty()) {
-                    return annotation.entityField();
-                }
-            }
-        }
+        SearchField declared = SearchableDtoMetadata.of(dtoClass).field(field);
+        return declared == null ? field : declared.sortField();
+    }
 
-        // Default: use the field name itself
-        return field;
+    /**
+     * @param entityManager an entity manager of the entity's persistence unit
+     * @param entityClass the entity class
+     * @return the entity's primary key as the JPA metamodel describes it
+     */
+    public static EntityKey entityKey(EntityManager entityManager, Class<?> entityClass) {
+        return ENTITY_KEYS.computeIfAbsent(entityClass.getName(), name -> EntityKey.of(entityManager, entityClass));
     }
 
     /**
      * Gets the primary key field name from the entity class.
      * This is used to ensure unique, deterministic ordering during pagination.
-     * Results are cached per entity class to avoid repeated metamodel/reflection calls.
      *
      * @param entityManager the entity manager
      * @param entityClass the entity class
-     * @return the primary key field name, or null if not found
+     * @return the identifier attribute's name, or {@link #COMPOSITE_KEY_MARKER} for a composite key
      */
     public static String getPrimaryKeyFieldName(EntityManager entityManager, Class<?> entityClass) {
-        String cacheKey = entityClass.getName();
-        return PRIMARY_KEY_CACHE.computeIfAbsent(cacheKey, k ->
-            computePrimaryKeyFieldName(entityManager, entityClass));
+        EntityKey key = entityKey(entityManager, entityClass);
+        return key.composite() ? COMPOSITE_KEY_MARKER : key.attribute();
     }
 
-    /**
-     * Internal method that computes the primary key field name without caching.
-     */
-    private static String computePrimaryKeyFieldName(EntityManager entityManager, Class<?> entityClass) {
-        try {
-            EntityType<?> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            // Check if it's a single ID attribute (@EmbeddedId or simple @Id)
-            if (entityType.hasSingleIdAttribute()) {
-                SingularAttribute<?, ?> idAttribute = entityType.getId(entityType.getIdType().getJavaType());
-
-                // Check if this is an @EmbeddedId (composite key embedded in a single object)
-                if (isEmbeddedId(entityClass, idAttribute.getName())) {
-                    log.trace("@EmbeddedId composite key detected for entity {}: using special handling", entityClass.getSimpleName());
-                    return handleCompositeKey(entityType, entityClass);
-                } else {
-                    // Simple @Id
-                    return idAttribute.getName();
-                }
-            } else {
-                // Handle composite key with @IdClass
-                log.trace("@IdClass composite key detected for entity {}: using special handling", entityClass.getSimpleName());
-                return handleCompositeKey(entityType, entityClass);
-            }
-
-        } catch (Exception e) {
-            log.warn("Failed to get primary key field name for entity {}: {}", entityClass.getSimpleName(), e.getMessage());
-            return findIdFieldByReflection(entityClass);
-        }
-    }
-    
     /**
      * Checks if the entity uses @EmbeddedId composite key.
-     * Results are cached per entity class to avoid repeated reflection calls.
      *
      * @param entityManager the entity manager
      * @param entityClass the entity class
      * @return true if the entity uses @EmbeddedId, false otherwise
      */
     public static boolean isEmbeddedIdEntity(EntityManager entityManager, Class<?> entityClass) {
-        String cacheKey = entityClass.getName();
-        return EMBEDDED_ID_CACHE.computeIfAbsent(cacheKey, k ->
-            computeIsEmbeddedIdEntity(entityManager, entityClass));
-    }
-
-    /**
-     * Internal method that computes whether entity uses @EmbeddedId without caching.
-     */
-    private static boolean computeIsEmbeddedIdEntity(EntityManager entityManager, Class<?> entityClass) {
-        try {
-            EntityType<?> entityType = entityManager.getMetamodel().entity(entityClass);
-            if (entityType.hasSingleIdAttribute()) {
-                SingularAttribute<?, ?> idAttribute = entityType.getId(entityType.getIdType().getJavaType());
-                return isEmbeddedId(entityClass, idAttribute.getName());
-            }
-            return false;
-        } catch (Exception e) {
-            log.warn("Failed to check if entity {} uses @EmbeddedId: {}", entityClass.getSimpleName(), e.getMessage());
-            return false;
-        }
+        return entityKey(entityManager, entityClass).embedded();
     }
 
     /**
      * Returns the actual attribute name of the {@code @EmbeddedId} property for an entity that uses
      * an embedded composite key. The name is resolved from the JPA metamodel, so it is not assumed
      * to be {@code "id"} and works for any attribute name (e.g. {@code "orderItemId"}).
-     * Results are cached per entity class.
      *
      * @param entityManager the entity manager
      * @param entityClass   the entity class
      * @return the embedded id attribute name, or {@code null} if the entity does not use {@code @EmbeddedId}
      */
     public static String getEmbeddedIdAttributeName(EntityManager entityManager, Class<?> entityClass) {
-        String cached = EMBEDDED_ID_ATTR_CACHE.computeIfAbsent(entityClass.getName(), k -> {
-            String name = computeEmbeddedIdAttributeName(entityManager, entityClass);
-            return name != null ? name : NO_EMBEDDED_ID;
-        });
-        return NO_EMBEDDED_ID.equals(cached) ? null : cached;
+        EntityKey key = entityKey(entityManager, entityClass);
+        return key.embedded() ? key.attribute() : null;
     }
 
-    /**
-     * Internal method that computes the {@code @EmbeddedId} attribute name without caching.
-     */
-    private static String computeEmbeddedIdAttributeName(EntityManager entityManager, Class<?> entityClass) {
-        try {
-            EntityType<?> entityType = entityManager.getMetamodel().entity(entityClass);
-            if (entityType.hasSingleIdAttribute()) {
-                SingularAttribute<?, ?> idAttribute = entityType.getId(entityType.getIdType().getJavaType());
-                if (isEmbeddedId(entityClass, idAttribute.getName())) {
-                    return idAttribute.getName();
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to resolve @EmbeddedId attribute name for entity {}: {}",
-                    entityClass.getSimpleName(), e.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * Checks if the given field is an @EmbeddedId field.
-     *
-     * @param entityClass the entity class
-     * @param fieldName the field name to check
-     * @return true if the field is annotated with @EmbeddedId, false otherwise
-     */
-    private static boolean isEmbeddedId(Class<?> entityClass, String fieldName) {
-        try {
-            Field field = entityClass.getDeclaredField(fieldName);
-            return field.isAnnotationPresent(EmbeddedId.class);
-        } catch (NoSuchFieldException e) {
-            // Try superclass
-            Class<?> superClass = entityClass.getSuperclass();
-            if (superClass != null && !superClass.equals(Object.class)) {
-                return isEmbeddedId(superClass, fieldName);
-            }
-            return false;
-        } catch (Exception e) {
-            log.warn("Failed to check @EmbeddedId annotation for field {} in entity {}: {}", 
-                fieldName, entityClass.getSimpleName(), e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Gets field names from an @EmbeddedId class.
-     * 
-     * @param entityClass the entity class
-     * @param embeddedIdFieldName the name of the @EmbeddedId field
-     * @return list of field names in the embedded ID class
-     */
-    private static List<String> getEmbeddedIdFieldNames(Class<?> entityClass, String embeddedIdFieldName) {
-        List<String> fieldNames = new ArrayList<>();
-        
-        try {
-            Field embeddedIdField = entityClass.getDeclaredField(embeddedIdFieldName);
-            Class<?> embeddedIdClass = embeddedIdField.getType();
-            
-            // Get all fields from the embedded ID class
-            for (Field field : embeddedIdClass.getDeclaredFields()) {
-                // Skip static and synthetic fields
-                if (!Modifier.isStatic(field.getModifiers()) && 
-                    !field.isSynthetic()) {
-                    fieldNames.add(field.getName());
-                }
-            }
-            
-            log.trace("Found fields in @EmbeddedId class {}: {}", embeddedIdClass.getSimpleName(), fieldNames);
-            
-        } catch (Exception e) {
-            log.warn("Failed to get fields from @EmbeddedId class for entity {}: {}", 
-                entityClass.getSimpleName(), e.getMessage());
-        }
-        
-        return fieldNames;
-    }
-    
-    /**
-     * Handles composite key detection for @IdClass entities.
-     * Returns a special marker to indicate composite key processing is needed.
-     */
-    private static String handleCompositeKey(EntityType<?> entityType, Class<?> entityClass) {
-        // For composite keys, we return a special marker
-        // This will be handled specially in the two-phase query executors
-        return COMPOSITE_KEY_MARKER;
-    }
-    
     /**
      * Gets all ID field names for composite key entities (@IdClass and @EmbeddedId).
-     * Results are cached per entity class to avoid repeated metamodel/reflection calls.
      *
      * @param entityManager the entity manager
      * @param entityClass the entity class
      * @return list of ID field names for composite keys, empty list if single ID
      */
     public static List<String> getCompositeKeyFieldNames(EntityManager entityManager, Class<?> entityClass) {
-        String cacheKey = entityClass.getName();
-        return COMPOSITE_KEY_CACHE.computeIfAbsent(cacheKey, k ->
-            computeCompositeKeyFieldNames(entityManager, entityClass));
+        return entityKey(entityManager, entityClass).components();
     }
-
-    /**
-     * Internal method that computes composite key field names without caching.
-     */
-    private static List<String> computeCompositeKeyFieldNames(EntityManager entityManager, Class<?> entityClass) {
-        List<String> idFields = new ArrayList<>();
-
-        try {
-            EntityType<?> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            if (!entityType.hasSingleIdAttribute()) {
-                // Get all ID attributes for @IdClass
-                Set<? extends SingularAttribute<?, ?>> idAttributes = entityType.getIdClassAttributes();
-                for (SingularAttribute<?, ?> idAttribute : idAttributes) {
-                    idFields.add(idAttribute.getName());
-                }
-                log.trace("Found @IdClass composite key fields for {}: {}", entityClass.getSimpleName(), idFields);
-            } else {
-                // Check if it's @EmbeddedId
-                SingularAttribute<?, ?> idAttribute = entityType.getId(entityType.getIdType().getJavaType());
-                if (isEmbeddedId(entityClass, idAttribute.getName())) {
-                    // For @EmbeddedId, get fields from the embedded class
-                    idFields = getEmbeddedIdFieldNames(entityClass, idAttribute.getName());
-                    log.trace("Found @EmbeddedId composite key fields for {}: {}", entityClass.getSimpleName(), idFields);
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Failed to get composite key fields for entity {}: {}", entityClass.getSimpleName(), e.getMessage());
-            // Fallback to reflection
-            idFields = findIdFieldsByReflection(entityClass);
-        }
-
-        return idFields;
-    }
-    
-    /**
-     * Finds all @Id annotated fields using reflection (fallback method).
-     */
-    private static List<String> findIdFieldsByReflection(Class<?> entityClass) {
-        List<String> idFields = new ArrayList<>();
-        
-        for (Field field : entityClass.getDeclaredFields()) {
-            if (field.isAnnotationPresent(Id.class)) {
-                idFields.add(field.getName());
-            }
-        }
-        
-        log.trace("Found ID fields by reflection for {}: {}", entityClass.getSimpleName(), idFields);
-        return idFields;
-    }
-    
-    /**
-     * Finds the ID field using reflection as a fallback method.
-     * 
-     * @param entityClass the entity class
-     * @return the ID field name, or null if not found
-     */
-    private static String findIdFieldByReflection(Class<?> entityClass) {
-        try {
-            // Search in the class hierarchy
-            Class<?> currentClass = entityClass;
-            while (currentClass != null && !currentClass.equals(Object.class)) {
-                // Check fields
-                for (Field field : currentClass.getDeclaredFields()) {
-                    if (field.isAnnotationPresent(Id.class)) {
-                        return field.getName();
-                    }
-                }
-                
-                // Check methods (getters)
-                for (Method method : currentClass.getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(Id.class) && method.getName().startsWith("get")) {
-                        String fieldName = method.getName().substring(3);
-                        return Character.toLowerCase(fieldName.charAt(0)) + fieldName.substring(1);
-                    }
-                }
-                
-                currentClass = currentClass.getSuperclass();
-            }
-            
-            // Common fallback field names
-            String[] commonIdFields = {"id", "uuid", "identifier"};
-            for (String fieldName : commonIdFields) {
-                if (hasField(entityClass, fieldName)) {
-                    log.trace("Using fallback ID field '{}' for entity {}", fieldName, entityClass.getSimpleName());
-                    return fieldName;
-                }
-            }
-            
-            log.warn("No ID field found for entity {}", entityClass.getSimpleName());
-            return null;
-            
-        } catch (Exception e) {
-            log.warn("Failed to find ID field by reflection for entity {}: {}", entityClass.getSimpleName(), e.getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * Checks if the entity class has a field with the given name.
-     * 
-     * @param entityClass the entity class
-     * @param fieldName the field name to check
-     * @return true if the field exists, false otherwise
-     */
-    private static boolean hasField(Class<?> entityClass, String fieldName) {
-        try {
-            Class<?> currentClass = entityClass;
-            while (currentClass != null && !currentClass.equals(Object.class)) {
-                try {
-                    currentClass.getDeclaredField(fieldName);
-                    return true;
-                } catch (NoSuchFieldException e) {
-                    // Continue searching in superclass
-                }
-                currentClass = currentClass.getSuperclass();
-            }
-            return false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /**
-     * Extracts join paths from search condition nodes.
-     * This is used to determine which entity relationships need to be joined
-     * for filtering purposes.
-     *
-     * @param nodes the search condition nodes
-     * @return set of join paths (e.g., "author", "author.address")
-     */
-    public static Set<String> extractJoinPaths(List<SearchCondition.Node> nodes) {
-        Set<String> joinPaths = new HashSet<>();
-        if (nodes == null) return joinPaths;
-
-        for (SearchCondition.Node node : nodes) {
-            if (node instanceof SearchCondition.Condition) {
-                SearchCondition.Condition condition = (SearchCondition.Condition) node;
-                String entityField = condition.getEntityField();
-                if (entityField != null && entityField.contains(".")) {
-                    String[] pathParts = entityField.split("\\.");
-                    StringBuilder path = new StringBuilder();
-                    for (int i = 0; i < pathParts.length - 1; i++) {
-                        if (path.length() > 0) path.append(".");
-                        path.append(pathParts[i]);
-                        joinPaths.add(path.toString());
-                    }
-                }
-            } else if (node instanceof SearchCondition.Group) {
-                joinPaths.addAll(extractJoinPaths(node.getNodes()));
-            }
-        }
-
-        return joinPaths;
-    }
-} 
+}

@@ -1,25 +1,19 @@
 package dev.simplecore.searchable.core.service.specification;
 
+import dev.simplecore.searchable.core.config.SearchableJpaSettings;
+import dev.simplecore.searchable.core.service.join.EntityPaths;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.ManyToMany;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.EntityType;
-import jakarta.persistence.metamodel.ManagedType;
 import jakarta.persistence.metamodel.PluralAttribute;
-import java.lang.reflect.Field;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import lombok.extern.slf4j.Slf4j;
 
 /**
- * Analyzes entity relationships to detect ToOne, ToMany, and nested relationships.
- * Used for optimizing JOIN strategies and preventing N+1 problems.
+ * Reads an entity's relationships from the JPA metamodel: which to-one associations are fetched
+ * with a list to prevent N+1 loading, and whether a path runs through a collection.
  */
-@Slf4j
 public class RelationshipAnalyzer<T> {
 
     private final EntityManager entityManager;
@@ -31,307 +25,72 @@ public class RelationshipAnalyzer<T> {
     }
 
     /**
-     * Detect commonly accessed ToOne relationships to prevent N+1 problems.
-     * This analyzes the entity class to find ManyToOne and OneToOne fields
-     * that are likely to be accessed frequently, including nested relationships.
+     * The associations fetched with every list of this entity: its own ManyToOne and OneToOne
+     * attributes and, unless the persistence unit switches it off, the to-one attributes of the
+     * entities in its collections (for example {@code comments.author}).
      */
     public Set<String> detectCommonToOneFields() {
-        Set<String> commonFields = new HashSet<>();
-
-        try {
-            log.trace("DetectCommonToOneFields: Analyzing entity class: {}", entityClass.getSimpleName());
-
-            // Use JPA metamodel to find ToOne relationships
-            EntityType<T> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            // Add all ManyToOne and OneToOne relationships
-            entityType.getSingularAttributes().forEach(attr -> {
-                if (attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_ONE ||
-                        attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_ONE) {
-                    commonFields.add(attr.getName());
-                    log.trace("DetectCommonToOneFields: Found {} relationship: {}",
-                            attr.getPersistentAttributeType(), attr.getName());
-                }
-            });
-
-            // ENHANCEMENT: Detect nested ToOne relationships in ManyToMany related entities
-            try {
-                Object configured = entityManager.getEntityManagerFactory().getProperties().get("searchable.auto_fetch_collections");
-                Set<String> nestedToOneFields = configured != null && !Boolean.parseBoolean(configured.toString())
-                        ? Collections.emptySet() : detectNestedToOneRelationships();
-                commonFields.addAll(nestedToOneFields);
-            } catch (Exception e) {
-                log.warn("Failed to detect nested ToOne relationships, continuing without them: {}", e.getMessage());
-            }
-
-            log.trace("DetectCommonToOneFields: Detected {} ToOne relationships for automatic fetch joining: {}",
-                    commonFields.size(), commonFields);
-
-        } catch (Exception e) {
-            log.warn("DetectCommonToOneFields: Metamodel analysis failed, falling back to reflection: {}", e.getMessage());
-
-            // Fallback to reflection if metamodel fails
-            Field[] fields = entityClass.getDeclaredFields();
-            for (Field field : fields) {
-                if (field.isAnnotationPresent(ManyToOne.class) ||
-                        field.isAnnotationPresent(OneToOne.class)) {
-                    commonFields.add(field.getName());
-                    log.trace("DetectCommonToOneFields: Found ToOne field via reflection: {}", field.getName());
-                }
-            }
-
-            log.trace("DetectCommonToOneFields: Reflection fallback detected {} ToOne relationships: {}",
-                    commonFields.size(), commonFields);
+        Set<String> fields = detectToOneFieldsForEntity(entityClass);
+        if (SearchableJpaSettings.flag(entityManager, SearchableJpaSettings.AUTO_FETCH_COLLECTIONS, true)) {
+            fields.addAll(detectNestedToOneRelationships());
         }
-
-        return commonFields;
+        return fields;
     }
 
     /**
-     * Detect nested ToOne relationships in ManyToMany and OneToMany related entities.
-     * This prevents N+1 problems in scenarios like UserAccount.organizations.parent.
+     * The to-one attributes of the entities in this entity's OneToMany and ManyToMany collections,
+     * as paths through the collection. Fetching them prevents N+1 loading when the collection's
+     * elements are read, as in {@code UserAccount.organizations.parent}.
      */
     public Set<String> detectNestedToOneRelationships() {
-        Set<String> nestedToOneFields = new HashSet<>();
-
-        try {
-            log.trace("DetectNestedToOneRelationships: Analyzing nested relationships for entity: {}", entityClass.getSimpleName());
-
-            EntityType<T> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            // Analyze ManyToMany relationships
-            entityType.getPluralAttributes().forEach(attr -> {
-                if (attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_MANY) {
-                    String relationshipName = attr.getName();
-                    Class<?> targetEntityClass = attr.getElementType().getJavaType();
-
-                    log.trace("DetectNestedToOneRelationships: Analyzing ManyToMany relationship '{}' with target entity: {}",
-                            relationshipName, targetEntityClass.getSimpleName());
-
-                    // Find ToOne relationships in the target entity
-                    Set<String> targetToOneFields = detectToOneFieldsForEntity(targetEntityClass);
-
-                    // Create nested paths (e.g., "organizations.parent")
-                    for (String targetToOneField : targetToOneFields) {
-                        String nestedPath = relationshipName + "." + targetToOneField;
-                        nestedToOneFields.add(nestedPath);
-                        log.trace("DetectNestedToOneRelationships: Found nested ToOne path: {}", nestedPath);
-                    }
-                }
-            });
-
-            // Analyze OneToMany relationships
-            entityType.getPluralAttributes().forEach(attr -> {
-                if (attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_MANY) {
-                    String relationshipName = attr.getName();
-                    Class<?> targetEntityClass = attr.getElementType().getJavaType();
-
-                    log.trace("DetectNestedToOneRelationships: Analyzing OneToMany relationship '{}' with target entity: {}",
-                            relationshipName, targetEntityClass.getSimpleName());
-
-                    // Find ToOne relationships in the target entity
-                    Set<String> targetToOneFields = detectToOneFieldsForEntity(targetEntityClass);
-
-                    // Create nested paths (e.g., "comments.author")
-                    for (String targetToOneField : targetToOneFields) {
-                        String nestedPath = relationshipName + "." + targetToOneField;
-                        nestedToOneFields.add(nestedPath);
-                        log.trace("DetectNestedToOneRelationships: Found nested ToOne path: {}", nestedPath);
-                    }
-                }
-            });
-
-            if (!nestedToOneFields.isEmpty()) {
-                log.trace("DetectNestedToOneRelationships: Detected {} nested ToOne relationships: {}",
-                        nestedToOneFields.size(), nestedToOneFields);
+        Set<String> nested = new HashSet<>();
+        EntityType<T> entityType = entityManager.getMetamodel().entity(entityClass);
+        for (PluralAttribute<? super T, ?, ?> collection : entityType.getPluralAttributes()) {
+            Attribute.PersistentAttributeType kind = collection.getPersistentAttributeType();
+            if (kind != Attribute.PersistentAttributeType.MANY_TO_MANY
+                    && kind != Attribute.PersistentAttributeType.ONE_TO_MANY) {
+                continue;
             }
-
-        } catch (Exception e) {
-            log.warn("DetectNestedToOneRelationships: Failed to analyze nested relationships: {}", e.getMessage());
+            for (String toOne : detectToOneFieldsForEntity(collection.getElementType().getJavaType())) {
+                nested.add(collection.getName() + "." + toOne);
+            }
         }
-
-        return nestedToOneFields;
+        return nested;
     }
 
     /**
-     * Detect ToOne relationships for a specific entity class.
-     * This is used to analyze target entities in ManyToMany/OneToMany relationships.
+     * @param type an entity class
+     * @return the names of its ManyToOne and OneToOne attributes
      */
-    public Set<String> detectToOneFieldsForEntity(Class<?> entityClass) {
-        Set<String> toOneFields = new HashSet<>();
-
-        try {
-            EntityType<?> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            entityType.getSingularAttributes().forEach(attr -> {
-                if (attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_ONE ||
-                        attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_ONE) {
-                    toOneFields.add(attr.getName());
-                    log.trace("DetectToOneFieldsForEntity: Found {} relationship '{}' in entity: {}",
-                            attr.getPersistentAttributeType(), attr.getName(), entityClass.getSimpleName());
-                }
-            });
-
-        } catch (Exception e) {
-            log.trace("DetectToOneFieldsForEntity: Metamodel analysis failed for entity {}, falling back to reflection: {}",
-                    entityClass.getSimpleName(), e.getMessage());
-
-            // Fallback to reflection
-            Field[] fields = entityClass.getDeclaredFields();
-            for (Field field : fields) {
-                if (field.isAnnotationPresent(ManyToOne.class) ||
-                        field.isAnnotationPresent(OneToOne.class)) {
-                    toOneFields.add(field.getName());
-                    log.trace("DetectToOneFieldsForEntity: Found ToOne field '{}' via reflection in entity: {}",
-                            field.getName(), entityClass.getSimpleName());
-                }
+    public Set<String> detectToOneFieldsForEntity(Class<?> type) {
+        Set<String> toOne = new HashSet<>();
+        entityManager.getMetamodel().entity(type).getSingularAttributes().forEach(attribute -> {
+            Attribute.PersistentAttributeType kind = attribute.getPersistentAttributeType();
+            if (kind == Attribute.PersistentAttributeType.MANY_TO_ONE
+                    || kind == Attribute.PersistentAttributeType.ONE_TO_ONE) {
+                toOne.add(attribute.getName());
             }
-        }
-
-        return toOneFields;
-    }
-
-    /**
-     * Detect ManyToMany relationships that need batch loading to prevent N+1 problems.
-     * This method analyzes the entity class to find ManyToMany fields.
-     */
-    public Set<String> detectManyToManyFields() {
-        Set<String> manyToManyFields = new HashSet<>();
-
-        try {
-            log.trace("DetectManyToManyFields: Analyzing entity class: {}", entityClass.getSimpleName());
-
-            // Use JPA metamodel to find ManyToMany relationships
-            EntityType<T> entityType = entityManager.getMetamodel().entity(entityClass);
-
-            // Find all ManyToMany relationships
-            entityType.getPluralAttributes().forEach(attr -> {
-                if (attr.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_MANY) {
-                    manyToManyFields.add(attr.getName());
-                    log.trace("DetectManyToManyFields: Found ManyToMany relationship: {}", attr.getName());
-                }
-            });
-
-            if (!manyToManyFields.isEmpty()) {
-                log.trace("DetectManyToManyFields: Detected {} ManyToMany relationships: {}",
-                        manyToManyFields.size(), manyToManyFields);
-            }
-
-        } catch (Exception e) {
-            log.warn("DetectManyToManyFields: Metamodel analysis failed, falling back to reflection: {}", e.getMessage());
-
-            // Fallback to reflection if metamodel fails
-            Field[] fields = entityClass.getDeclaredFields();
-            for (Field field : fields) {
-                if (field.isAnnotationPresent(ManyToMany.class)) {
-                    manyToManyFields.add(field.getName());
-                    log.trace("DetectManyToManyFields: Found ManyToMany field via reflection: {}", field.getName());
-                }
-            }
-
-            log.trace("DetectManyToManyFields: Reflection fallback detected {} ManyToMany relationships: {}",
-                    manyToManyFields.size(), manyToManyFields);
-        }
-
-        return manyToManyFields;
+        });
+        return toOne;
     }
 
     /**
      * Checks if a path represents a ToMany relationship.
+     *
+     * @param root a root of the analysed entity; only its type is read
+     * @param path a dotted attribute path
+     * @return whether the path runs through a collection
      */
     public boolean isToManyPath(Root<T> root, String path) {
-        if (path == null || path.trim().isEmpty()) {
-            return false;
-        }
-
-        try {
-            String[] parts = path.split("\\.");
-            Class<?> currentType = root.getJavaType();
-
-            for (String part : parts) {
-                ManagedType<?> managedType = entityManager.getMetamodel().managedType(currentType);
-                Attribute<?, ?> attribute = managedType.getAttribute(part);
-
-                if (attribute.isCollection()) {
-                    return true;
-                }
-
-                // For nested paths, get the target entity type for next iteration
-                if (attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_ONE ||
-                        attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_ONE) {
-                    currentType = attribute.getJavaType();
-                } else if (attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_MANY ||
-                        attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_MANY) {
-                    // For collection attributes, get the element type
-                    if (attribute instanceof PluralAttribute) {
-                        currentType = ((PluralAttribute<?, ?, ?>) attribute).getElementType().getJavaType();
-                    }
-                } else {
-                    currentType = attribute.getJavaType();
-                }
-            }
-
-            return false;
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid path '{}' during ToMany analysis: {}", path, e.getMessage());
-            return false; // Assume ToOne if path is invalid
-        } catch (Exception e) {
-            log.warn("Unexpected error analyzing path '{}': {}", path, e.getMessage());
-            return false;
-        }
+        return isToManyPath(path);
     }
 
     /**
-     * Count the number of ToMany relationships.
+     * @param path a dotted attribute path of the analysed entity
+     * @return whether the path runs through a collection
      */
-    public int countToManyPaths(Set<String> paths, Root<T> root) {
-        return (int) paths.stream()
-                .filter(path -> isToManyPath(root, path))
-                .count();
+    public boolean isToManyPath(String path) {
+        return path != null && !path.trim().isEmpty()
+                && EntityPaths.traversesCollection(entityManager, entityClass, path);
     }
-
-    /**
-     * Validates if a path exists and is accessible in the entity metamodel.
-     * This prevents "Unable to locate Attribute" errors during JOIN operations.
-     */
-    public boolean isValidPath(Root<T> root, String path) {
-        if (path == null || path.trim().isEmpty()) {
-            return false;
-        }
-
-        try {
-            String[] pathParts = path.split("\\.");
-            Class<?> currentType = root.getJavaType();
-
-            for (String part : pathParts) {
-                EntityType<?> entityType = entityManager.getMetamodel().entity(currentType);
-                
-                // Check if the attribute exists
-                try {
-                    Attribute<?, ?> attribute = entityType.getAttribute(part);
-                    
-                    // Get the next type for validation
-                    if (attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_ONE ||
-                            attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_ONE) {
-                        currentType = attribute.getJavaType();
-                    } else if (attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.MANY_TO_MANY ||
-                            attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.ONE_TO_MANY) {
-                        if (attribute instanceof PluralAttribute) {
-                            currentType = ((PluralAttribute<?, ?, ?>) attribute).getElementType().getJavaType();
-                        }
-                    } else {
-                        currentType = attribute.getJavaType();
-                    }
-                } catch (IllegalArgumentException e) {
-                    log.trace("Path validation failed: attribute '{}' not found in entity '{}'", part, currentType.getSimpleName());
-                    return false;
-                }
-            }
-
-            return true;
-        } catch (Exception e) {
-            log.trace("Path validation failed for '{}': {}", path, e.getMessage());
-            return false;
-        }
-    }
-} 
+}

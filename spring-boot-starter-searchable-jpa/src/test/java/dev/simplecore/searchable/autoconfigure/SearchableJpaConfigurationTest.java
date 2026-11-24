@@ -1,18 +1,27 @@
 package dev.simplecore.searchable.autoconfigure;
 
 import dev.simplecore.searchable.core.service.bucket.TimeBucketCounter;
+import dev.simplecore.searchable.core.utils.SearchableTimeZoneHolder;
 import jakarta.persistence.EntityManager;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.context.ApplicationContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * Verifies Category 8 (Spring Boot starter) issues 8-1 through 8-3.
+ * Verifies what the starter registers. The values are asserted on the map Spring Boot hands to
+ * Hibernate, through the registered customizer; that they reach a real EntityManagerFactory is
+ * asserted by the integration tests in {@code dev.simplecore.searchable.starter}.
  */
 class SearchableJpaConfigurationTest {
 
@@ -22,40 +31,53 @@ class SearchableJpaConfigurationTest {
             .withBean(EntityManager.class, () -> entityManager)
             .withConfiguration(AutoConfigurations.of(SearchableJpaConfiguration.class));
 
+    @AfterEach
+    void restoreZone() {
+        SearchableTimeZoneHolder.setZoneId(ZoneOffset.UTC);
+    }
+
+    /** Applies the registered customizer to the properties an application already set. */
+    private static Map<String, Object> customized(ApplicationContext context, Map<String, Object> applicationValues) {
+        Map<String, Object> properties = new HashMap<>(applicationValues);
+        context.getBean(HibernatePropertiesCustomizer.class).customize(properties);
+        return properties;
+    }
+
     // ---- baseline: defaults are applied when auto-optimization is on ----
 
     @Test
-    @DisplayName("auto-optimization registers the Hibernate default property source")
+    @DisplayName("auto-optimization adds the Hibernate defaults")
     void autoOptimizationRegistersDefaults() {
         runner.run(context -> {
-            ConfigurableEnvironment environment = (ConfigurableEnvironment) context.getEnvironment();
-            assertThat(environment.getPropertySources().contains("searchableHibernateOptimizations")).isTrue();
-            assertThat(environment.getProperty("spring.jpa.properties.hibernate.connection.provider_disables_autocommit")).isNull();
-            assertThat(environment.getProperty("spring.jpa.properties.hibernate.default_batch_fetch_size"))
-                    .isEqualTo("100");
+            Map<String, Object> properties = customized(context, Map.of());
+            assertThat(properties)
+                    .containsEntry("hibernate.default_batch_fetch_size", "100")
+                    .containsEntry("hibernate.jdbc.batch_size", "1000")
+                    .doesNotContainKey("hibernate.jdbc.batch_versioned_data")
+                    .containsEntry("hibernate.order_inserts", "true")
+                    .containsEntry("hibernate.order_updates", "true")
+                    .containsEntry("hibernate.query.in_clause_parameter_padding", "true")
+                    .doesNotContainKey("hibernate.connection.provider_disables_autocommit");
         });
     }
 
-    // ---- 8-1: the manual gate actually disables optimization ----
+    // ---- 8-1: the switch actually disables optimization ----
 
     @Test
-    @DisplayName("8-1: setting auto-optimization=false disables the optimization via the manual check")
+    @DisplayName("8-1: setting auto-optimization=false adds no Hibernate default")
     void autoOptimizationCanBeDisabled() {
-        runner.withPropertyValues("searchable.hibernate.auto-optimization=false").run(context -> {
-            ConfigurableEnvironment environment = (ConfigurableEnvironment) context.getEnvironment();
-            assertThat(environment.getPropertySources().contains("searchableHibernateOptimizations")).isFalse();
-        });
+        runner.withPropertyValues("searchable.hibernate.auto-optimization=false").run(context ->
+                assertThat(customized(context, Map.of()).keySet()).noneMatch(key -> key.startsWith("hibernate.")));
     }
 
     // ---- 8-2: user configuration overrides the library defaults ----
 
     @Test
-    @DisplayName("8-2: a user-provided Hibernate property overrides the library default")
+    @DisplayName("8-2: a Hibernate property the application set is kept over the library default")
     void userConfigurationOverridesLibraryDefault() {
-        runner.withPropertyValues("spring.jpa.properties.hibernate.jdbc.batch_size=500").run(context -> {
-            assertThat(context.getEnvironment().getProperty("spring.jpa.properties.hibernate.jdbc.batch_size"))
-                    .isEqualTo("500");
-        });
+        runner.run(context -> assertThat(customized(context, Map.of("hibernate.jdbc.batch_size", "500")))
+                .containsEntry("hibernate.jdbc.batch_size", "500")
+                .containsEntry("hibernate.default_batch_fetch_size", "100"));
     }
 
     // ---- 8-3: invalid batch sizes fail fast at startup ----
@@ -94,21 +116,46 @@ class SearchableJpaConfigurationTest {
         runner.withBean("customTimeBucketCounter", TimeBucketCounter.class, () -> custom)
                 .run(context -> assertThat(context).getBean(TimeBucketCounter.class).isSameAs(custom));
     }
+
     @Test
+    @DisplayName("the search limits are added even when Hibernate optimization is disabled")
     void limitsApplyEvenWhenOptimizationIsDisabled() {
         runner.withPropertyValues("searchable.hibernate.auto-optimization=false",
                 "searchable.default-page-size=50", "searchable.max-page-size=2000",
                 "searchable.hibernate.auto-fetch-collections=false").run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context.getEnvironment().getProperty("spring.jpa.properties.searchable.default_page_size")).isEqualTo("50");
-            assertThat(context.getEnvironment().getProperty("spring.jpa.properties.searchable.max_page_size")).isEqualTo("2000");
-            assertThat(context.getEnvironment().getProperty("spring.jpa.properties.searchable.auto_fetch_collections")).isEqualTo("false");
+            assertThat(customized(context, Map.of()))
+                    .containsEntry("searchable.default_page_size", "50")
+                    .containsEntry("searchable.max_page_size", "2000")
+                    .containsEntry("searchable.auto_fetch_collections", "false");
         });
     }
 
     @Test
     void defaultPageSizeMustNotExceedMaximum() {
         runner.withPropertyValues("searchable.default-page-size=21", "searchable.max-page-size=20")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    // ---- time zone resolution ----
+
+    @Test
+    @DisplayName("the configured zone is used for timezone-less values")
+    void configuredZoneIsApplied() {
+        runner.withPropertyValues("searchable.date-time.default-timezone=Asia/Seoul").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(SearchableTimeZoneHolder.getZoneId()).isEqualTo(ZoneId.of("Asia/Seoul"));
+        });
+    }
+
+    @Test
+    @DisplayName("a zone id that does not exist stops startup instead of falling through to another zone")
+    void unknownZoneFailsStartup() {
+        runner.withPropertyValues("searchable.date-time.default-timezone=Nowhere/Nothing").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasStackTraceContaining("Nowhere/Nothing");
+        });
+        runner.withPropertyValues("spring.jackson.time-zone=Nowhere/Nothing")
                 .run(context -> assertThat(context).hasFailed());
     }
 }
