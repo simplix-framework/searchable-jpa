@@ -112,9 +112,9 @@ select_build_type() {
         
         # Show current refresh dependencies status
         if [ "$REFRESH_DEPS" = "true" ]; then
-            refresh_deps_status="${GREEN}✓ ON${NC}"
+            refresh_deps_status="${GREEN}✔ ON${NC}"
         else
-            refresh_deps_status="${RED}✗ OFF${NC}"
+            refresh_deps_status="${RED}✖ OFF${NC}"
         fi
         echo -e "${CYAN}Refresh Dependencies: ${refresh_deps_status} ${YELLOW}(press 'r' to toggle)${NC}"
         echo ""
@@ -202,7 +202,7 @@ execute_build() {
         seconds=$((duration % 60))
         
         echo ""
-        echo -e "${GREEN}✅ Build completed successfully!${NC}"
+        echo -e "${GREEN}✔ Build completed successfully!${NC}"
         echo -e "${BLUE}Build time: ${minutes}m ${seconds}s${NC}"
         
         # Show build results
@@ -210,7 +210,7 @@ execute_build() {
         
     else
         echo ""
-        echo -e "${RED}❌ Build failed.${NC}"
+        echo -e "${RED}✖ Build failed.${NC}"
         echo -e "${YELLOW}Please check the logs to resolve the error.${NC}"
         exit 1
     fi
@@ -227,21 +227,21 @@ show_build_results() {
         1|2)
             echo -e "${CYAN}Generated JAR files:${NC}"
             find . -name "*.jar" -path "*/build/libs/*" | while read jar; do
-                echo "  📦 $jar"
+                echo "  • $jar"
             done
             ;;
         3)
             echo -e "${CYAN}Local Maven repository location:${NC}"
-            echo "  📁 ~/.m2/repository/dev/simplecore/searchable/"
+            echo "  • ~/.m2/repository/dev/simplecore/searchable/"
             echo ""
             echo -e "${CYAN}Published artifacts:${NC}"
             find ~/.m2/repository/dev/simplecore/searchable/ -name "*.jar" -type f 2>/dev/null | head -10 | while read jar; do
-                echo "  📦 $(basename $jar)"
+                echo "  • $(basename $jar)"
             done
             ;;
         4)
             echo -e "${CYAN}Published to GitHub Packages${NC}"
-            echo "  🌐 https://github.com/simplix-framework/searchable-jpa/packages"
+            echo "  • https://github.com/simplix-framework/searchable-jpa/packages"
             ;;
     esac
 }
@@ -287,7 +287,7 @@ main() {
     fi
     
     echo ""
-    echo -e "${GREEN}🎉 All tasks completed successfully!${NC}"
+    echo -e "${GREEN}✔ All tasks completed successfully!${NC}"
     echo -e "${BLUE}Completion time: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
 }
 
