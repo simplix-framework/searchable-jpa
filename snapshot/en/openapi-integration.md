@@ -1,48 +1,54 @@
-# OpenAPI Integration
+# OpenAPI
 
-The starter includes the OpenAPI module. The Boot 4 / library 2.x line uses SpringDoc 3.2.0; the Boot 3 / library 1.x line uses SpringDoc 2.10.0. Keep SpringDoc on the line compatible with the host application.
+After this page the GET parameters and the POST body of a search endpoint appear in the API document. It needs the starter and SpringDoc on the classpath. Boot 4 with library 2.x uses SpringDoc 3.2.0, Boot 3 with library 1.x uses SpringDoc 2.10.0.
 
-## GET documentation
+![Generating the API document](./_images/openapi-customizer-wiring.svg)
 
+## GET document
+
+A controller parameter that carries `@SearchableParams` is documented with the query parameters the DTO declares. Both declarations of [Writing requests](/en/request-formats.md) are documented the same way.
+
+| Documented parameter | Content |
+| --- | --- |
+| `field.operator` | One for each operator the field allows; every operator when `operators` is empty |
+| `sort` | One comma-separated value. The description lists the sortable fields |
+| `keyword` | Documented only when the DTO has a keyword field |
+| `page`, `size` | The page number and size |
+
+- Search fields of a superclass are included.
+- A parameter that only carries the raw values, such as a `Map`, is left out of the document.
+- The annotation of the same name in `dev.simplecore.searchable.openapi.annotation` is deprecated and still honored. Use `dev.simplecore.searchable.core.annotation.SearchableParams`.
+
+## POST document
+
+For a `@RequestBody SearchCondition<PostSearchDTO>` parameter a JSON example is added to the schema SpringDoc resolved. Without a type argument, or with a wildcard, nothing can be generated, so name the DTO type in the controller. The example is an illustration picked from the allowed fields and operators; it is not validated against the constraints of the DTO.
+
+## Field descriptions and examples
+
+The description and the example value of a field come from the `@Schema` annotation of Swagger.
+
+<!-- snippet: PostSearchDTO.java#described -->
 ```java
-import dev.simplecore.searchable.openapi.annotation.SearchableParams;
-import java.util.Map;
-import org.springframework.web.bind.annotation.RequestParam;
-
-// On a controller method parameter:
-// @RequestParam @SearchableParams(PostSearchDTO.class) Map<String, String> params
+@SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true, keyword = true)
+@Schema(description = "Post title", example = "Spring")
+@Size(min = 2, max = 100)
+private String title;
 ```
 
-For every searchable DTO field, `ParameterGenerator` adds query parameters for its allowed operators. An empty operator declaration now documents all operators rather than hiding the field's operations. Inherited searchable fields are included. Sortable fields appear in the sort description, and page/size parameters are added. The annotation only documents input; call `SearchableParamsParser.convert` as shown in [Basic Usage](/en/basic-usage.md).
+## Value schemas
 
-## POST documentation
+| Subject | In the document |
+| --- | --- |
+| Dates and times | The formats `date`, `partial-time` or `date-time`, by type |
+| Values of `in` and `between` | A comma-separated string |
+| enum | The list of values, written into the parameter schema |
+| `isNull`, `isNotNull` | A value that allows `true` only |
 
-Use `@RequestBody SearchCondition<PostSearchDTO>`. The customizer resolves the type argument, emits the condition/group schema and a JSON example. A raw `SearchCondition`, wildcard or unresolved generic type may not provide enough information for generation. Declare a concrete DTO type at the controller boundary.
+Parameter schemas carry their type under OpenAPI 3.0 and 3.1, and every schema reference resolves. Example values in the document are hints; they replace neither authorization nor validation.
 
-Example generation chooses a searchable field and an allowed operator, uses DTO schema examples when available, and converts values to the target type. A generation error is logged and may produce an empty example; it does not grant runtime access to an unapproved field. Inspect generated examples when using custom validation constraints.
+## Settings and API groups
 
-## Descriptions and value schemas
-
-Use Swagger's field annotation for a description/example:
-
-```java
-import dev.simplecore.searchable.core.annotation.SearchableField;
-import io.swagger.v3.oas.annotations.media.Schema;
-import static dev.simplecore.searchable.core.condition.operator.SearchOperator.CONTAINS;
-
-public class TitleSearchDTO {
-    @SearchableField(operators = {CONTAINS})
-    @Schema(description = "Post title", example = "Spring")
-    private String title;
-    public String getTitle() { return title; }
-}
-```
-
-Temporal parameter formats distinguish date, partial-time and date-time. Multi-value GET parameters remain comma-separated strings, including enum value hints. Arrays and inherited fields are handled. Schema example values are documentation hints, not authorization or validation replacements.
-
-## Auto-configuration and groups
-
-The named `searchConditionCustomizer` bean is an `OperationCustomizer`. It is enabled by default only in a servlet web application with the required SpringDoc and Spring MVC beans. Define a bean with the same name to replace it, or set:
+The document is produced by an `OperationCustomizer` bean named `searchConditionCustomizer`. It is registered by default in a servlet application that has SpringDoc and Spring MVC. A bean of the same name replaces it, and this setting turns it off.
 
 ```yaml
 searchable:
@@ -50,39 +56,36 @@ searchable:
     enabled: false
 ```
 
-This disables Searchable JPA customization, not SpringDoc's API endpoints. Configure the endpoints separately if needed:
+`searchable.swagger.enabled` turns off the documentation of this library only. Configure the endpoints of SpringDoc with `springdoc.api-docs.enabled` and `springdoc.swagger-ui.enabled`.
 
-```yaml
-springdoc:
-  api-docs:
-    enabled: false
-  swagger-ui:
-    enabled: false
-```
+A group built with `GroupedOpenApi` does not receive global `OperationCustomizer` beans. Add the customizer to each group.
 
-For an explicitly configured group, add the operation customizer to that group:
-
+<!-- snippet: PostApiGroup.java#group -->
 ```java
-import org.springdoc.core.customizers.OperationCustomizer;
-import org.springdoc.core.models.GroupedOpenApi;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Bean;
+@Configuration
+public class PostApiGroup {
 
-@Bean
-GroupedOpenApi postsApi(@Qualifier("searchConditionCustomizer") OperationCustomizer customizer) {
-    return GroupedOpenApi.builder().group("posts")
-            .pathsToMatch("/api/posts/**")
-            .addOperationCustomizer(customizer)
-            .build();
+    @Bean
+    GroupedOpenApi postsApi(@Qualifier("searchConditionCustomizer") OperationCustomizer customizer) {
+        return GroupedOpenApi.builder()
+                .group("posts")
+                .pathsToMatch("/api/posts/**")
+                .addOperationCustomizer(customizer)
+                .build();
+    }
 }
 ```
 
-Register a customizer once per group to avoid duplicate parameters. The current description generator replaces the operation description with the searchable field summary; place additional API narrative elsewhere or apply your own later customizer deliberately.
+- Registering the same customizer twice in one group duplicates the parameters.
+- When several `OperationCustomizer` beans make the injection ambiguous, name the bean with `@Qualifier("searchConditionCustomizer")`.
+- A description the application wrote in `@Operation` is kept, and the summary of search fields is appended to it.
 
-![OpenAPI customization](./_images/openapi-customizer-wiring.svg)
+## Checking the result
 
-## Runtime verification
+With the default paths of SpringDoc, look at `/v3/api-docs` and `/swagger-ui/index.html`; a group is at `/v3/api-docs/{group}`. Check aliased fields, inherited fields, allowed operators, date formats and example values. The page examples of the document are general values, and the real maximum size comes from the settings of the application.
 
-With SpringDoc's default paths, inspect `/v3/api-docs` and `/swagger-ui/index.html`; grouped descriptions use `/v3/api-docs/{group}`. Confirm aliases, inherited fields, allowed operators, temporal formats and example values. Swagger schemas advertise general page examples; the authoritative runtime maximum is the application's configuration. If your maximum differs from the documented defaults, customize the schema accordingly.
+The library applies no authentication to the documentation endpoints and generates no error or response schema of the application.
 
-The library does not install an authentication policy for documentation endpoints or generate your application's error/response DTO contract. Configure these in the application. OpenAPI descriptions do not replace server-side DTO validation.
+## Next step
+
+[Errors and messages](/en/errors-and-messages.md) answers invalid requests.

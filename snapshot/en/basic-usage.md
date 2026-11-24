@@ -1,172 +1,161 @@
-# Basic Usage
+# First search API
 
-This complete search example targets the `2.0.1-SNAPSHOT` starter. Put each public class in its own file under the application's component/entity scan. Configure a datasource and an ordinary `@SpringBootApplication` as usual. Field names are validated at runtime; string-based field paths are not checked by the Java compiler.
+After this page an endpoint searches posts by title and returns them sorted and paged. It needs a Spring Boot application with the starter from [Installation](/en/installation.md) and a configured datasource.
+
+![Request handling](./_images/search-request-flow.svg)
+
+A query string, a JSON body and the Java builder all become one `SearchCondition`. The library checks the condition against the declaration of the search DTO and runs only what the declaration allows.
 
 ## Entity
 
-```java
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import java.time.Instant;
+The examples use the post entity `Post`. The listing shows the fields that are columns; constructors and accessors are left out. Associations are added in [Searching related data](/en/relationship-and-two-phase-query.md).
 
+<!-- snippet: Post.java#columns -->
+```java
 @Entity
 public class Post {
-    @Id @GeneratedValue
+
+    @Id
+    @GeneratedValue
     private Long id;
     private String title;
-    private String status;
+    @Enumerated(EnumType.STRING)
+    private PostStatus status;
     private Long viewCount;
     private Instant createdAt;
-
-    public Long getId() { return id; }
-    public String getTitle() { return title; }
-    public String getStatus() { return status; }
-    public Long getViewCount() { return viewCount; }
-    public Instant getCreatedAt() { return createdAt; }
+    private LocalDateTime publishedAt;
+    private Long tenantId;
 }
 ```
-
-The example is a read model; add the constructors, mutation methods and auditing needed by your application. The default no-argument constructor satisfies JPA.
 
 ## Search DTO
 
-A search DTO lists fields clients may filter or sort. Supply JavaBean getters, including for inherited searchable properties. The DTO is a validation schema; clients do not submit a populated DTO instance.
+A search DTO lists the fields a client may use in conditions and sorts. No instance is created per request and only the declaration is read, so it needs no accessors.
 
+<!-- snippet: PostSearchDTO.java#basic -->
 ```java
-import dev.simplecore.searchable.core.annotation.SearchableField;
-import java.time.Instant;
-import static dev.simplecore.searchable.core.condition.operator.SearchOperator.*;
-
 public class PostSearchDTO {
-    @SearchableField(operators = {EQUALS, GREATER_THAN}, sortable = true)
-    private Long id;
-    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true)
-    private String title;
-    @SearchableField(operators = {EQUALS, IN})
-    private String status;
-    @SearchableField(operators = {GREATER_THAN_OR_EQUAL_TO, BETWEEN}, sortable = true)
-    private Long viewCount;
-    @SearchableField(operators = {BETWEEN, GREATER_THAN, LESS_THAN}, sortable = true)
-    private Instant createdAt;
 
-    public Long getId() { return id; }
-    public String getTitle() { return title; }
-    public String getStatus() { return status; }
-    public Long getViewCount() { return viewCount; }
-    public Instant getCreatedAt() { return createdAt; }
+    @SearchableField(operators = {EQUALS, IN}, sortable = true)
+    private Long id;
+
+    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true, keyword = true)
+    @Schema(description = "Post title", example = "Spring")
+    @Size(min = 2, max = 100)
+    private String title;
+
+    @SearchableField(operators = {EQUALS, IN}, aggregatable = true)
+    private PostStatus status;
+
+    @SearchableField(operators = {GREATER_THAN_OR_EQUAL_TO, BETWEEN}, sortable = true, aggregatable = true)
+    private Long viewCount;
+
+    @SearchableField(operators = {GREATER_THAN, LESS_THAN, BETWEEN}, sortable = true)
+    private Instant createdAt;
 }
 ```
 
-An empty `operators` declaration permits all operators, subject to value/type checks. Prefer explicit operators for a public endpoint. `sortable` defaults to false. `entityField` maps a DTO alias to an entity property path; `sortField` overrides only its sorting path. See [Search Operators](/en/search-operators.md).
+`@SearchableField` is in the package `dev.simplecore.searchable.core.annotation`, and the operator constants are static imports from `SearchOperator`. Only the operators listed in `operators` are accepted in a request, and only a field with `sortable = true` can be sorted by. `@Size` is a constraint on search values and `@Schema` a description for the API document. The other attributes are explained in [Declaring search fields](/en/search-fields.md).
 
 ## Repository and service
 
-```java
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+The repository must extend both `JpaRepository` and `JpaSpecificationExecutor`.
 
+<!-- snippet: PostRepository.java#repository -->
+```java
 public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificationExecutor<Post> {
 }
 ```
 
-```java
-import dev.simplecore.searchable.core.service.DefaultSearchableService;
-import jakarta.persistence.EntityManager;
-import org.springframework.stereotype.Service;
+The service extends `DefaultSearchableService`. A service that already extends another class uses the composition shown in [Extension and integration](/en/advanced-features.md).
 
+<!-- snippet: PostService.java#service -->
+```java
 @Service
 public class PostService extends DefaultSearchableService<Post, Long> {
+
     public PostService(PostRepository repository, EntityManager entityManager) {
         super(repository, entityManager);
     }
 }
 ```
 
-Both repository interfaces are required. If the service already extends another base class, use `SearchableServiceSupport` and `SearchableServiceDelegate`; see [Advanced Features](/en/advanced-features.md).
+## Response type
 
-## GET and POST controllers
+Returning entities makes it hard to control which fields are exposed, and serialization loads lazy associations. The examples convert to a response record.
 
+<!-- snippet: PostResponse.java#response -->
 ```java
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.parser.SearchableParamsParser;
-import dev.simplecore.searchable.openapi.annotation.SearchableParams;
-import java.util.Map;
-import org.springframework.data.domain.Page;
-import org.springframework.web.bind.annotation.*;
+public record PostResponse(Long id, String title, PostStatus status, Long viewCount, Instant createdAt) {
 
+    public static PostResponse from(Post post) {
+        return new PostResponse(post.getId(), post.getTitle(), post.getStatus(), post.getViewCount(),
+                post.getCreatedAt());
+    }
+}
+```
+
+## Controller
+
+<!-- snippet: PostController.java#controller -->
+```java
 @RestController
 @RequestMapping("/api/posts")
 public class PostController {
-    private final PostService service;
-    public PostController(PostService service) { this.service = service; }
 
-    @GetMapping("/search")
-    public Page<Post> search(@RequestParam @SearchableParams(PostSearchDTO.class) Map<String, String> params) {
-        return service.findAllWithSearch(new SearchableParamsParser<>(PostSearchDTO.class).convert(params));
+    private final PostService service;
+
+    public PostController(PostService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public Page<PostResponse> list(@SearchableParams SearchCondition<PostSearchDTO> condition) {
+        return service.findAllWithSearch(condition).map(PostResponse::from);
     }
 
     @PostMapping("/search")
-    public Page<Post> search(@RequestBody SearchCondition<PostSearchDTO> condition) {
-        return service.findAllWithSearch(condition);
+    public Page<PostResponse> search(@RequestBody SearchCondition<PostSearchDTO> condition) {
+        return service.findAllWithSearch(condition).map(PostResponse::from);
     }
 }
 ```
 
-`@SearchableParams` documents the map; the explicit parser call performs the conversion. Keep the DTO type argument on a JSON body. Jackson 2 and Jackson 3 use the same DTO validation and mapping rules. Do not bind an untyped condition from untrusted input.
+The starter resolves the `@SearchableParams SearchCondition<PostSearchDTO>` parameter of the GET method from the query string. The POST method takes a JSON body of the same type. In both cases the type argument `PostSearchDTO` decides which DTO validates the request, so do not leave it out.
 
-```bash
-curl --get 'http://localhost:8080/api/posts/search' \
-  --data-urlencode 'title.contains=Spring' \
-  --data-urlencode 'sort=createdAt.desc,id.asc' \
-  --data-urlencode 'page=0' \
-  --data-urlencode 'size=20'
+## Example data
+
+The requests and results of every later page refer to these posts.
+
+| Title | Status | Views | Created (UTC) | Author | Tenant |
+| --- | --- | --- | --- | --- | --- |
+| Spring Boot basics | PUBLISHED | 120 | 2026-10-01 09:00 | Minjun Kim | 1 |
+| JPA paging in depth | PUBLISHED | 480 | 2026-10-03 09:00 | Seoyeon Lee | 1 |
+| Query tuning draft | DRAFT | 15 | 2026-10-05 09:00 | Minjun Kim | 1 |
+| Spring Security notes | ARCHIVED | 300 | 2026-10-07 09:00 | Jiho Park | 2 |
+
+## First request
+
+<!-- snippet: first-search.http -->
+```http
+GET /api/posts?title.contains=Spring&sort=createdAt.desc&page=0&size=20
 ```
 
-GET conditions are ANDed. The sort syntax is `field.asc,otherField.desc`; `field,desc` is invalid. Use a JSON body for OR or nested groups:
+The request reads the posts whose title contains `Spring`, newest first. The `content` of the response holds Spring Security notes and Spring Boot basics, in that order. A condition parameter is written `field.operator=value` and a sort `sort=field.direction`. Without `page` and `size` the first page is read with the default size of 20.
 
-```json
-{
-  "conditions": [
-    {"field": "title", "searchOperator": "contains", "value": "Spring"},
-    {"operator": "and", "field": "status", "searchOperator": "in", "value": ["PUBLISHED", "DRAFT"]}
-  ],
-  "sort": {"orders": [{"field": "createdAt", "direction": "desc"}]},
-  "page": 0,
-  "size": 20
-}
+The service returns a Spring Data `Page<T>`. The JSON form of the response depends on the Spring Data and Jackson configuration of the application, so define your own response type for a public API.
+
+## Refused requests
+
+A field the DTO does not declare, an operator a field does not allow and a sort on a field that is not sortable are refused before any query runs.
+
+<!-- snippet: unknown-field.http -->
+```http
+GET /api/posts?content.contains=Spring
 ```
 
-The `operator` on a node connects that node to the accumulated result. The first node in each list has no preceding result. Values for BETWEEN use `value` and `value2`; IN uses an array. `entityField` and `fetchFields` are not client-controlled mapping/fetch options.
+This request raises `SearchableValidationException`, because `PostSearchDTO` has no field `content`. [Errors and messages](/en/errors-and-messages.md) shows how to answer the exception with HTTP 400.
 
-## Server-side groups
+## Next step
 
-The following condition means `status = PUBLISHED AND (title contains Spring OR title contains JPA)`. The inner group remains grouped when combined with the outer filter.
-
-```java
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.SearchConditionBuilder;
-
-SearchCondition<PostSearchDTO> condition = SearchConditionBuilder.create(PostSearchDTO.class)
-        .where(w -> w.equals("status", "PUBLISHED"))
-        .and(g -> g.contains("title", "Spring").orContains("title", "JPA"))
-        .sort(s -> s.desc("createdAt").asc("id"))
-        .page(0).size(20)
-        .build();
-```
-
-Within a list, connectors are evaluated left to right, rather than by SQL's implicit AND precedence. Use an explicit nested group for each intended pair of parentheses. `SearchConditionBuilder.from(existing, DTO.class)` copies the structure before extending it.
-
-## Pagination and responses
-
-Omitting pagination uses page 0 and the configured default size (20). Page size must be positive and no greater than the configured maximum (1,000 by default). The service adds primary-key ordering when necessary to break ties. Page content and total count refer to matching root entities, not joined child rows.
-
-The service returns Spring Data `Page<T>`. Its HTTP representation depends on the application's Spring Data/Jackson configuration. For a stable public response contract, map it to your own response DTO. Returning JPA entities directly can expose fields and traverse lazy relationships; choose a response model deliberately.
-
-![Search request flow](./_images/search-request-flow.svg)
-
-## Error and authorization boundaries
-
-DTO-aware input rejects unapproved fields/operators/sorts and invalid values. `SearchableParseException` and `SearchableValidationException` are runtime exceptions derived from `SearchableException`. Map these to a suitable client error in your controller advice. Jackson body conversion normally reports invalid JSON requests through Spring MVC's message-conversion error handling.
-
-The library does not add tenant or row permissions. Add mandatory scope on the server after parsing, and keep it outside client-controlled OR groups. See [Advanced Features](/en/advanced-features.md) for safe group composition and write semantics.
+[Declaring search fields](/en/search-fields.md) covers every attribute of `@SearchableField` and the shapes a DTO can take.

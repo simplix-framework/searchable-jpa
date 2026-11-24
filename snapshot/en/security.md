@@ -2,15 +2,15 @@
 
 ## Application boundary
 
-Use a DTO as the allowlist for client filters and sorts. Apply tenant and authorization predicates from trusted server state after the client's complete expression. Search-based updates and deletes affect every matching entity, including the entire table when conditions are empty; authorize them explicitly.
+Use a DTO as the allowlist for client filters and sorts. Apply tenant and authorization predicates from trusted server state after the client's complete expression; a `Specification` passed as the scope of a service call is combined that way by the library. Search-based updates and deletes affect every matching entity, including the entire table when conditions are empty; authorize them explicitly, and set `searchable.write.require-filter=true` to refuse a write that nothing narrows.
 
-The library validates condition structure and values, bounds pagination and uses Criteria predicates rather than concatenating SQL values. Applications remain responsible for request-body size, string length, rate limits, transaction/query timeouts, logging policy and response-field exposure. Do not bind server fetch paths from an unrestricted request.
+The library validates condition structure and values, bounds pagination and uses Criteria predicates rather than concatenating SQL values. A count per value returns the values of the field, so a client-named field is aggregated only when the DTO marks it `aggregatable`. A scroll cursor is not signed; it holds sort values of a row the client already received. Applications remain responsible for request-body size, string length, rate limits, transaction/query timeouts, logging policy and response-field exposure. Do not bind server fetch paths from an unrestricted request. [Server scope and limits](/en/server-scope-and-limits.md) shows how to combine a scope and bound requests.
 
 ## Verified dependency baseline (2026-10-30)
 
 The Boot 4 line resolves Spring Framework 7.0.10 and was checked against OSV with no findings in its resolved Maven dependencies. npm tooling was also checked with no reported advisories. These results describe the checked versions and date, not a guarantee against unknown vulnerabilities or future advisories.
 
-The Boot 3 line preserves Spring Framework 6.2.19 for compatibility with Boot 3.5.16. Tomcat is upgraded to 10.1.61 and Hibernate Validator to 8.0.6.Final. Two Spring Framework advisories remain in the public 6.2.19 baseline:
+The Boot 3 line preserves Spring Framework 6.2.19 for compatibility with Boot 3.5.16. Tomcat is upgraded to 10.1.61 and Hibernate Validator to 8.0.6.Final. The following Spring Framework advisories remain in the public 6.2.19 baseline:
 
 | Advisory | Application condition | Vendor severity |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ The Boot 3 line preserves Spring Framework 6.2.19 for compatibility with Boot 3.
 
 Searchable JPA does not configure XSLT views or SSE fragment endpoints. A consuming application can configure them independently, so the dependency findings must still be assessed against that application. Do not interpret this library's ordinary search tests as a security test of those unrelated endpoints.
 
-For both advisories, Spring lists **6.2.20 through Enterprise Support**, or **7.0.9 and later on the public 7.x line**, as fixed versions. Enterprise repository access is not part of this project's public build. Applications that have licensed access can align all Spring Framework modules to a supported fixed 6.2 release and run their integration suite. Moving to the 2.x library line requires an application-level Boot 4 migration. The maintenance build does not silently replace Spring 6 with Spring 7.
+For these advisories, Spring lists **6.2.20 through Enterprise Support**, or **7.0.9 and later on the public 7.x line**, as fixed versions. Enterprise repository access is not part of this project's public build. Applications that have licensed access can align all Spring Framework modules to a supported fixed 6.2 release and run their integration suite. Moving to the 2.x library line requires an application-level Boot 4 migration. The maintenance build does not silently replace Spring 6 with Spring 7.
 
 ## Reproducing checks
 

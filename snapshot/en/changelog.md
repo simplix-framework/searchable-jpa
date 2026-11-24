@@ -1,9 +1,25 @@
 # Changelog
 
-## 2.0.1
+## 2.1.0
 
 - Add `searchable.pattern-matching.case-insensitive` so CONTAINS, STARTS_WITH and ENDS_WITH can ignore case. Off by default.
 - Add `@SearchableField(keyword = true)` and the reserved `keyword` query parameter: the text matches a record when any keyword field contains it, AND-combined with the other conditions. A DTO with no keyword field refuses the parameter.
+- Apply a condition on a field behind a collection through one `EXISTS` over the entity instead of a join with `SELECT DISTINCT`. Rows and totals are unchanged, and an entity with a large-object column can be searched on SQL Server.
+- Add `caseSensitivity`, `match` and `aggregatable` to `@SearchableField`: case-insensitive comparison per field for equality, membership and patterns; conditions matched by some element or by no element of a collection; search through an `@ElementCollection`; fields offered for aggregation.
+- Add server scope overloads taking a `Specification` to `SearchableServiceSupport`, `SearchableServiceDelegate`, `SearchAggregator` and `TimeBucketCounter`.
+- Add `scrollWithSearch` with keyset or offset positions and `SearchCursor` for positions a client hands back; add `projectWithSearch`, which selects only the columns an interface or record projection reads.
+- Add `avg`, `min`/`max` over non-numeric fields, DTO-addressed aggregates and a ceiling on returned values to `SearchAggregator`; add `LocalDateTime`, `OffsetDateTime` and `ZonedDateTime` axes and calendar slices (`countByCalendar`) to `TimeBucketCounter`.
+- Resolve a controller parameter `@SearchableParams SearchCondition<D>` from the query string in the starter. `@SearchableParams` is now in `dev.simplecore.searchable.core.annotation`; the one in the OpenAPI module is deprecated and still honored. Add an opt-in problem-detail response for invalid searches.
+- Add settings for request limits, the IN batch size, the write chunk size, a required write filter, aggregate values and bucket count. With the starter, the application's `MessageSource` and Spring MVC conversion service are used.
+- Accept an optional `PlatformTransactionManager` in `SearchableServiceDelegate` and `DefaultSearchableService`.
+- Fix the starter's page and Hibernate settings not reaching the `EntityManagerFactory`; an unknown time zone id now stops startup.
+- Fix date handling: a date-only range end covers its whole day on every input path and is no longer rounded into the next day by the database; a date the calendar does not have is refused; text for a `String` field is searched as sent.
+- Fix time buckets on a column without an offset that is written outside UTC, `[` in a pattern on SQL Server, and message arguments printed as placeholders.
+- Fix OpenAPI output: GET parameters keep their types under OpenAPI 3.1, every schema reference resolves, an operation description written by the application is kept, and `sort` is documented as the one comma-separated value the parser reads.
+- `searchable-jpa-core` no longer brings SpringDoc and Spring MVC transitively; the starter still does. `searchable.hibernate.batch-versioned-data` has no effect on Hibernate 7. A fetch path that names no association is refused. `countWithSearch` and `existsWithSearch` ignore page and size. Removed: `JoinStrategyManager`, `SearchableFieldUtils.extractJoinPaths`, `RelationshipAnalyzer.isValidPath`, `countToManyPaths` and `detectManyToManyFields`, `OpenApiDocUtils.toCamelCase`, and the public `configureHibernateOptimizations` and `configureSearchLimits` methods of `SearchableJpaConfiguration`, whose constructor now takes an `Environment` and a `BeanFactory`.
+- The message of a violated DTO constraint follows the locale of the request instead of the default locale of the JVM.
+- Korean messages no longer attach a particle directly to a value.
+- Rewrite the documentation in the order of adoption. Its Java, HTTP and JSON listings come from files the test suite compiles and runs, and `npm run test:docs` checks the listings, the coverage of features and the parity of English and Korean.
 
 ## 2.0.0
 
@@ -16,7 +32,7 @@ The same corrections are maintained on the Boot 4 and Boot 3 lines; each line re
 - Traverse writes in chunks, preserve transactions and callbacks, and protect ID/version/audit/non-updatable properties and omitted primitive patch values.
 - Count each root once in precise half-open time buckets; retain datasource transaction guarantees.
 - Upgrade stable dependencies and Gradle, require normal and performance checks during release, and generate deterministic test fixtures on fresh checkouts.
-- Correct version navigation for project subpaths, retain language/page/heading, handle missing pages and failed requests, preserve snapshots on release deployment and refresh both documentation languages.
+- Correct version navigation for project subpaths, retain language/page/heading, handle missing pages and failed requests, preserve snapshots on release deployment and refresh the English and Korean documentation.
 
 Existing public service and Jackson 2 signatures remain available. Oversized requests that previously bypassed documented limits are now rejected. See [configuration](/en/auto-configuration.md), [query strategy](/en/two-phase-query-optimization.md) and [API behavior](/en/api-reference.md).
 
@@ -49,7 +65,7 @@ This release includes breaking changes.
 #### Breaking Changes
 - **Consolidated exception hierarchy** [`622d7f6`](https://github.com/simplix-framework/searchable-jpa/commit/622d7f6)
   - `SearchableValidationException` and `SearchableParseException` now extend only `SearchableException` (a `RuntimeException`)
-  - Both exceptions no longer extend `jakarta.validation.ValidationException`
+  - They no longer extend `jakarta.validation.ValidationException`
   - `SearchableException` retains five subclasses: `SearchableConfigurationException`, `SearchableValidationException`, `SearchableOperationException`, `SearchableJoinException`, and `SearchableParseException`
 - **Changed evaluation order for nested and()/or() condition groups**
   - Nested `and()`/`or()` groups built with `SearchConditionBuilder` are no longer grouped by operator. Each node is now combined with the accumulated result using its own operator, in call order (left to right).

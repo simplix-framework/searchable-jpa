@@ -1,172 +1,161 @@
-# 기본 사용법
+# 첫 검색 API
 
-이 예제는 `2.0.1-SNAPSHOT` starter 기준입니다. public 클래스마다 파일을 나누고, 애플리케이션의 컴포넌트·엔티티 탐색 경로에 배치하세요. 데이터소스와 일반 `@SpringBootApplication` 설정도 필요합니다. 문자열로 지정하는 필드 경로는 Java 컴파일 시점이 아닌 실행 시점에 검증합니다.
+이 페이지를 마치면 게시글을 제목으로 검색하고 정렬·페이지 조회하는 엔드포인트가 동작합니다. [설치](/ko/installation.md)에서 starter를 추가한 Spring Boot 애플리케이션과 데이터소스 설정이 필요합니다.
+
+![요청 처리 과정](./_images/search-request-flow.svg)
+
+쿼리 문자열, JSON 본문, Java 빌더는 모두 `SearchCondition` 하나로 변환됩니다. 라이브러리는 조건을 검색 DTO의 선언과 대조하고, 선언에 맞는 조건만 조회로 실행합니다.
 
 ## 엔티티
 
-```java
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import java.time.Instant;
+예제는 게시글 엔티티 `Post`를 사용합니다. 아래 목록은 열에 해당하는 필드이며, 생성자와 접근자는 생략했습니다. 연관 관계는 [연관 데이터 검색](/ko/relationship-and-two-phase-query.md)에서 추가합니다.
 
+<!-- snippet: Post.java#columns -->
+```java
 @Entity
 public class Post {
-    @Id @GeneratedValue
+
+    @Id
+    @GeneratedValue
     private Long id;
     private String title;
-    private String status;
+    @Enumerated(EnumType.STRING)
+    private PostStatus status;
     private Long viewCount;
     private Instant createdAt;
-
-    public Long getId() { return id; }
-    public String getTitle() { return title; }
-    public String getStatus() { return status; }
-    public Long getViewCount() { return viewCount; }
-    public Instant getCreatedAt() { return createdAt; }
+    private LocalDateTime publishedAt;
+    private Long tenantId;
 }
 ```
-
-조회용 예제입니다. 애플리케이션에 필요한 생성자, 변경 메서드와 감사 필드는 별도로 정의하세요. 기본 인자 없는 생성자는 JPA 요건을 충족합니다.
 
 ## 검색 DTO
 
-검색 DTO에는 클라이언트가 검색·정렬할 수 있는 필드를 선언합니다. 상속한 검색 필드를 포함해 JavaBean getter를 제공하세요. DTO는 검증용 정의이며, 클라이언트가 필드를 채운 DTO 인스턴스를 제출하는 방식이 아닙니다.
+검색 DTO는 클라이언트가 조건과 정렬에 사용할 수 있는 필드의 목록입니다. 요청마다 인스턴스를 만들지 않으며, 선언만 읽으므로 접근자가 필요 없습니다.
 
+<!-- snippet: PostSearchDTO.java#basic -->
 ```java
-import dev.simplecore.searchable.core.annotation.SearchableField;
-import java.time.Instant;
-import static dev.simplecore.searchable.core.condition.operator.SearchOperator.*;
-
 public class PostSearchDTO {
-    @SearchableField(operators = {EQUALS, GREATER_THAN}, sortable = true)
-    private Long id;
-    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true)
-    private String title;
-    @SearchableField(operators = {EQUALS, IN})
-    private String status;
-    @SearchableField(operators = {GREATER_THAN_OR_EQUAL_TO, BETWEEN}, sortable = true)
-    private Long viewCount;
-    @SearchableField(operators = {BETWEEN, GREATER_THAN, LESS_THAN}, sortable = true)
-    private Instant createdAt;
 
-    public Long getId() { return id; }
-    public String getTitle() { return title; }
-    public String getStatus() { return status; }
-    public Long getViewCount() { return viewCount; }
-    public Instant getCreatedAt() { return createdAt; }
+    @SearchableField(operators = {EQUALS, IN}, sortable = true)
+    private Long id;
+
+    @SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true, keyword = true)
+    @Schema(description = "Post title", example = "Spring")
+    @Size(min = 2, max = 100)
+    private String title;
+
+    @SearchableField(operators = {EQUALS, IN}, aggregatable = true)
+    private PostStatus status;
+
+    @SearchableField(operators = {GREATER_THAN_OR_EQUAL_TO, BETWEEN}, sortable = true, aggregatable = true)
+    private Long viewCount;
+
+    @SearchableField(operators = {GREATER_THAN, LESS_THAN, BETWEEN}, sortable = true)
+    private Instant createdAt;
 }
 ```
 
-`operators`를 생략하면 값과 타입 검증을 통과하는 모든 연산자를 허용합니다. 공개 API에는 허용할 연산자를 명시하는 것이 좋습니다. `sortable`의 기본값은 false입니다. `entityField`는 DTO 필드를 엔티티 속성 경로에 연결하고, `sortField`는 정렬 경로만 별도로 지정합니다. [검색 연산자](/ko/search-operators.md)에서 상세 규칙을 확인하세요.
+`@SearchableField`는 `dev.simplecore.searchable.core.annotation` 패키지에 있고, 연산자 상수는 `SearchOperator`에서 static import합니다. `operators`에 적은 연산자만 요청에서 허용하고, `sortable = true`인 필드만 정렬에 사용할 수 있습니다. `@Size`는 검색값에 적용하는 제약이고 `@Schema`는 API 문서에 기재할 설명입니다. 나머지 속성은 [검색 필드 선언](/ko/search-fields.md)에서 설명합니다.
 
 ## Repository와 서비스
 
-```java
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+Repository는 `JpaRepository`와 `JpaSpecificationExecutor`를 모두 상속해야 합니다.
 
+<!-- snippet: PostRepository.java#repository -->
+```java
 public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificationExecutor<Post> {
 }
 ```
 
-```java
-import dev.simplecore.searchable.core.service.DefaultSearchableService;
-import jakarta.persistence.EntityManager;
-import org.springframework.stereotype.Service;
+서비스는 `DefaultSearchableService`를 상속합니다. 이미 다른 클래스를 상속한 서비스는 [확장과 통합](/ko/advanced-features.md)의 조합 방식을 사용하세요.
 
+<!-- snippet: PostService.java#service -->
+```java
 @Service
 public class PostService extends DefaultSearchableService<Post, Long> {
+
     public PostService(PostRepository repository, EntityManager entityManager) {
         super(repository, entityManager);
     }
 }
 ```
 
-Repository는 두 인터페이스를 모두 상속해야 합니다. 서비스가 이미 다른 기본 클래스를 상속한다면 `SearchableServiceSupport`와 `SearchableServiceDelegate`를 사용하세요. [고급 기능](/ko/advanced-features.md)에 예제가 있습니다.
+## 응답 타입
 
-## GET·POST 컨트롤러
+엔티티를 그대로 반환하면 공개할 필드를 통제하기 어렵고 지연 로딩 연관이 직렬화 과정에서 조회됩니다. 예제는 응답용 record로 변환합니다.
 
+<!-- snippet: PostResponse.java#response -->
 ```java
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.parser.SearchableParamsParser;
-import dev.simplecore.searchable.openapi.annotation.SearchableParams;
-import java.util.Map;
-import org.springframework.data.domain.Page;
-import org.springframework.web.bind.annotation.*;
+public record PostResponse(Long id, String title, PostStatus status, Long viewCount, Instant createdAt) {
 
+    public static PostResponse from(Post post) {
+        return new PostResponse(post.getId(), post.getTitle(), post.getStatus(), post.getViewCount(),
+                post.getCreatedAt());
+    }
+}
+```
+
+## 컨트롤러
+
+<!-- snippet: PostController.java#controller -->
+```java
 @RestController
 @RequestMapping("/api/posts")
 public class PostController {
-    private final PostService service;
-    public PostController(PostService service) { this.service = service; }
 
-    @GetMapping("/search")
-    public Page<Post> search(@RequestParam @SearchableParams(PostSearchDTO.class) Map<String, String> params) {
-        return service.findAllWithSearch(new SearchableParamsParser<>(PostSearchDTO.class).convert(params));
+    private final PostService service;
+
+    public PostController(PostService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public Page<PostResponse> list(@SearchableParams SearchCondition<PostSearchDTO> condition) {
+        return service.findAllWithSearch(condition).map(PostResponse::from);
     }
 
     @PostMapping("/search")
-    public Page<Post> search(@RequestBody SearchCondition<PostSearchDTO> condition) {
-        return service.findAllWithSearch(condition);
+    public Page<PostResponse> search(@RequestBody SearchCondition<PostSearchDTO> condition) {
+        return service.findAllWithSearch(condition).map(PostResponse::from);
     }
 }
 ```
 
-`@SearchableParams`는 Map의 API 문서를 생성합니다. 실제 변환은 예제의 파서 호출에서 수행합니다. JSON 요청 본문에는 DTO 타입 인자를 유지하세요. Jackson 2와 Jackson 3에 같은 DTO 검증·매핑 규칙을 적용합니다. 외부 입력을 DTO 타입 없는 검색 조건으로 받지 마세요.
+GET 메서드의 `@SearchableParams SearchCondition<PostSearchDTO>` 파라미터는 starter가 쿼리 문자열에서 변환합니다. POST 메서드는 JSON 본문을 같은 타입으로 받습니다. GET과 POST 모두 타입 인자 `PostSearchDTO`가 검증에 사용할 DTO를 결정하므로 생략하지 마세요.
 
-```bash
-curl --get 'http://localhost:8080/api/posts/search' \
-  --data-urlencode 'title.contains=Spring' \
-  --data-urlencode 'sort=createdAt.desc,id.asc' \
-  --data-urlencode 'page=0' \
-  --data-urlencode 'size=20'
+## 예제 데이터
+
+이후 모든 페이지의 요청과 결과는 다음 게시글을 기준으로 합니다.
+
+| 제목 | 상태 | 조회 수 | 생성 시각 (UTC) | 작성자 | 테넌트 |
+| --- | --- | --- | --- | --- | --- |
+| Spring Boot basics | PUBLISHED | 120 | 2026-10-01 09:00 | Minjun Kim | 1 |
+| JPA paging in depth | PUBLISHED | 480 | 2026-10-03 09:00 | Seoyeon Lee | 1 |
+| Query tuning draft | DRAFT | 15 | 2026-10-05 09:00 | Minjun Kim | 1 |
+| Spring Security notes | ARCHIVED | 300 | 2026-10-07 09:00 | Jiho Park | 2 |
+
+## 첫 요청
+
+<!-- snippet: first-search.http -->
+```http
+GET /api/posts?title.contains=Spring&sort=createdAt.desc&page=0&size=20
 ```
 
-GET 검색 조건은 AND로 연결합니다. 정렬 문법은 `field.asc,otherField.desc`입니다. `field,desc`는 올바른 문법이 아닙니다. OR나 중첩 그룹에는 JSON 본문을 사용하세요.
+제목에 `Spring`이 포함된 게시글을 생성 시각의 내림차순으로 조회합니다. 응답의 `content`에는 Spring Security notes, Spring Boot basics가 이 순서로 들어 있습니다. 조건 파라미터의 형식은 `필드.연산자=값`이고, 정렬은 `sort=필드.방향`입니다. `page`와 `size`를 생략하면 0번 페이지를 기본 크기 20으로 조회합니다.
 
-```json
-{
-  "conditions": [
-    {"field": "title", "searchOperator": "contains", "value": "Spring"},
-    {"operator": "and", "field": "status", "searchOperator": "in", "value": ["PUBLISHED", "DRAFT"]}
-  ],
-  "sort": {"orders": [{"field": "createdAt", "direction": "desc"}]},
-  "page": 0,
-  "size": 20
-}
+서비스는 Spring Data의 `Page<T>`를 반환합니다. 응답 JSON의 형태는 애플리케이션의 Spring Data와 Jackson 설정에 따라 달라지므로, 외부에 공개하는 API에는 자체 응답 타입을 정의하세요.
+
+## 거부되는 요청
+
+DTO에 선언하지 않은 필드, 허용하지 않은 연산자, 정렬을 허용하지 않은 필드는 조회 전에 거부합니다.
+
+<!-- snippet: unknown-field.http -->
+```http
+GET /api/posts?content.contains=Spring
 ```
 
-각 노드의 `operator`는 그 노드를 앞에서 계산한 결과에 연결합니다. 각 목록의 첫 노드에는 연결할 이전 결과가 없습니다. BETWEEN은 `value`와 `value2`, IN은 배열을 사용합니다. 클라이언트가 `entityField`나 `fetchFields`로 매핑·로딩 경로를 지정할 수는 없습니다.
+이 요청은 `content` 필드가 `PostSearchDTO`에 없으므로 `SearchableValidationException`이 발생합니다. 예외를 HTTP 400으로 응답하는 방법은 [오류와 메시지](/ko/errors-and-messages.md)에 있습니다.
 
-## 서버의 그룹 구성
+## 다음 단계
 
-아래 조건은 `status = PUBLISHED AND (title에 Spring 포함 OR title에 JPA 포함)`을 뜻합니다. 외부 조건에 결합해도 내부 그룹의 범위를 유지합니다.
-
-```java
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.condition.SearchConditionBuilder;
-
-SearchCondition<PostSearchDTO> condition = SearchConditionBuilder.create(PostSearchDTO.class)
-        .where(w -> w.equals("status", "PUBLISHED"))
-        .and(g -> g.contains("title", "Spring").orContains("title", "JPA"))
-        .sort(s -> s.desc("createdAt").asc("id"))
-        .page(0).size(20)
-        .build();
-```
-
-같은 목록의 연결 연산자는 왼쪽부터 평가합니다. SQL의 암묵적인 AND 우선순위를 적용하지 않습니다. 의도한 괄호마다 중첩 그룹을 명시하세요. `SearchConditionBuilder.from(existing, DTO.class)`는 구조를 복사한 뒤 확장합니다.
-
-## 페이지와 응답
-
-페이지를 생략하면 페이지 0과 설정한 기본 크기 20을 사용합니다. 페이지 크기는 양수이며, 설정한 최대 크기 이하여야 합니다. 기본 최대 크기는 1,000입니다. 정렬값이 같은 경우의 순서를 결정하도록 필요한 기본키 정렬을 추가합니다. 페이지 내용과 전체 건수는 조인된 자식 행이 아닌 검색 대상 루트 엔티티 기준입니다.
-
-서비스는 Spring Data의 `Page<T>`를 반환합니다. HTTP 응답 형식은 애플리케이션의 Spring Data·Jackson 설정에 따라 달라집니다. 공개 응답 형식을 일정하게 유지하려면 별도의 응답 DTO로 변환하세요. JPA 엔티티를 그대로 반환하면 필드가 노출되거나 지연 로딩이 실행될 수 있으므로 응답 모델을 용도에 맞게 정의하세요.
-
-![검색 요청 처리 흐름](./_images/search-request-flow.svg)
-
-## 오류 처리와 권한
-
-DTO 검증에서는 허용하지 않은 필드·연산자·정렬과 잘못된 값을 거부합니다. `SearchableParseException`과 `SearchableValidationException`은 `SearchableException`을 상속한 런타임 예외입니다. 컨트롤러 예외 처리에서 적절한 클라이언트 오류로 변환하세요. 잘못된 JSON 본문은 일반적으로 Spring MVC의 메시지 변환 오류 처리로 전달합니다.
-
-라이브러리가 테넌트나 행별 권한 조건을 자동 추가하지는 않습니다. 파싱 후 서버에서 필수 범위를 추가하고, 클라이언트가 제어하는 OR 그룹 밖에 유지하세요. 그룹 결합과 쓰기 동작은 [고급 기능](/ko/advanced-features.md)을 참조하세요.
+[검색 필드 선언](/ko/search-fields.md)에서 `@SearchableField`의 모든 속성과 DTO 형태를 확인합니다.

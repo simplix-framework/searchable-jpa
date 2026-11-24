@@ -1,67 +1,34 @@
 # Installation
 
-This guide describes the `2.0.1-SNAPSHOT` source line. Dependency versions below were checked on 2026-10-30. A version ending in `-SNAPSHOT` is a development build, not a stable release.
+After this page Searchable JPA is on the classpath of your application. The page describes `2.1.0-SNAPSHOT`; a version ending in `-SNAPSHOT` is a development build.
 
 ## Compatibility
 
-| Searchable JPA line | Spring Boot line | Java packages | Source branch |
+| Searchable JPA | Spring Boot | Java packages | Source branch |
 | --- | --- | --- | --- |
 | 2.x | 4.1.x and later 4.x | `jakarta.*` | `master` |
-| 1.x | 3.2.x–3.5.x | `jakarta.*` | `spring-boot-3x` |
+| 1.x | 3.2.x-3.5.x | `jakarta.*` | `spring-boot-3x` |
 | 0.1.x | 2.7.x | `javax.*` | `spring-boot-2x` (unmaintained) |
 
-The current build is tested with Java 17, Spring Boot 4.1.2 and Hibernate ORM 7.4.14.Final. Java 17 is the minimum source and bytecode level. Use one library line consistently across all three modules. A Boot 3 application stays on the 1.x line until the application itself migrates to Boot 4.
+The current build is tested with Java 17, 21 and 25, Spring Boot 4.1.2 and Hibernate ORM 7.4.14.Final. Java 17 is the minimum source and bytecode level. Use one version for every module. A Spring Boot 3 application stays on 1.x until it moves to Boot 4.
 
-Existing 2.x service subclasses, delegate construction, query parameter names and Jackson 2 public method signatures remain available. Jackson 3 supports typed HTTP search bodies. Corrected validation now rejects requests that exceed the documented limits; see [Auto Configuration](/en/auto-configuration.md).
+## Choosing modules
 
-## Modules
+Use the starter in a Spring MVC application. It holds both library modules and configures the hand-over of settings, the conversion of controller parameters and the API document. With `searchable-jpa-core` alone no web or SpringDoc dependency is added, and the application wires the items on the right of the figure itself, as [Extension and integration](/en/advanced-features.md) shows.
+
+![Modules](./_images/module-choice.svg)
 
 | Artifact | Contents |
 | --- | --- |
-| `searchable-jpa-core` | Conditions, DTO validation, JPA queries, services and time counts |
-| `searchable-jpa-openapi` | `@SearchableParams`, operation customization and examples; includes core |
-| `spring-boot-starter-searchable-jpa` | Both modules and Spring Boot auto-configuration |
+| `spring-boot-starter-searchable-jpa` | The core and OpenAPI modules and Spring Boot auto-configuration |
+| `searchable-jpa-openapi` | The API document. Includes core |
+| `searchable-jpa-core` | Conditions, DTO validation, JPA queries, services, aggregates, time buckets |
 
-Use the starter for a Spring MVC application. The application still supplies its datasource, entities, repositories, controllers and access-control rules. Repositories must implement both `JpaRepository` and `JpaSpecificationExecutor`.
+The application supplies its datasource, entities, repositories, controllers and access control.
 
-## Local installation
+## Adding the dependency
 
-Build with the committed Gradle wrapper and Java 17 or later:
-
-```bash
-./gradlew check performanceTest publishToMavenLocal
-```
-
-This installs all three modules under `~/.m2/repository/dev/simplecore/searchable/<artifact>/2.0.1-SNAPSHOT/`. The command performs no Git tagging or remote publication. Repeating it replaces the local snapshot.
-
-A Gradle consumer can resolve the local snapshot first:
-
-```groovy
-repositories {
-    mavenLocal()
-    mavenCentral()
-}
-
-dependencies {
-    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.0.1-SNAPSHOT'
-}
-```
-
-If repository declarations live in `settings.gradle`, add `mavenLocal()` there. Gradle consumers that cached an older snapshot can run their build with `--refresh-dependencies` after installation.
-
-A Maven consumer uses its local repository automatically:
-
-```xml
-<dependency>
-  <groupId>dev.simplecore.searchable</groupId>
-  <artifactId>spring-boot-starter-searchable-jpa</artifactId>
-  <version>2.0.1-SNAPSHOT</version>
-</dependency>
-```
-
-## GitHub Packages
-
-For a remotely published version, configure `https://maven.pkg.github.com/simplix-framework/searchable-jpa` and select a version that actually exists in that repository. Keep credentials outside committed files:
+A published version comes from GitHub Packages. Name a version that exists in that repository and keep credentials outside committed files.
 
 ```groovy
 repositories {
@@ -74,13 +41,44 @@ repositories {
         }
     }
 }
+
+dependencies {
+    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.1.0-SNAPSHOT'
+}
 ```
 
-The token needs package-read permission. The source build reads `gpr.user` and `gpr.token` from an ignored `gradle.properties`, or `GITHUB_USERNAME` and `GITHUB_TOKEN`. Remote publication uses separate publication credentials; local publication needs none.
+The token needs permission to read packages. Maven uses the same coordinates.
 
-## Dependency baseline
+```xml
+<dependency>
+  <groupId>dev.simplecore.searchable</groupId>
+  <artifactId>spring-boot-starter-searchable-jpa</artifactId>
+  <version>2.1.0-SNAPSHOT</version>
+</dependency>
+```
 
-| Component | Tested version |
+## Installing from source
+
+Building with the committed Gradle wrapper and Java 17 or later installs every module into the local Maven repository.
+
+```bash
+./gradlew check performanceTest publishToMavenLocal
+```
+
+The command creates no Git tag and publishes nothing remotely. Add `mavenLocal()` to the repositories of the consuming project, and run a Gradle project that cached an older snapshot with `--refresh-dependencies`. When the repositories are declared in `settings.gradle`, add `mavenLocal()` there. The modules are installed under `~/.m2/repository/dev/simplecore/searchable/`. When the source build reaches GitHub Packages, it reads the credentials from `gpr.user` and `gpr.token` in an ignored `gradle.properties`, or from the environment variables `GITHUB_USERNAME` and `GITHUB_TOKEN`.
+
+```groovy
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+```
+
+## Verified dependency versions
+
+These versions were checked on 2026-10-30.
+
+| Component | Version |
 | --- | --- |
 | Gradle wrapper | 9.8.2 |
 | Spring Boot | 4.1.2 |
@@ -95,18 +93,18 @@ The token needs package-read permission. The source build reads `gpr.user` and `
 | SQL Server JDBC (test profile) | 13.6.1.jre11 |
 | JUnit / Mockito | 6.1.3 / 5.24.0 |
 
-The root `build.gradle` contains the complete managed overrides. Hibernate, Jackson, logging and test dependencies are aligned and tested together. An application's own dependency management can override transitive versions: inspect its resolved runtime classpath when upgrading. Use its appropriate JDBC driver; the SQL Server test driver does not configure an application datasource.
+The root `build.gradle` holds every managed version. The dependency management of an application can change transitive versions, so inspect the resolved runtime classpath after an upgrade. [Security](/en/security.md) describes the advisories that remain on the Boot 3 line.
 
-## Verification and database profiles
+## Source verification commands
 
 ```bash
 ./gradlew test
 ./gradlew performanceTest
-./gradlew build
+./gradlew :searchable-jpa-core:test -Dspring.profiles.active=mssql
 ```
 
-Regular tests exclude the `performance` tag; `performanceTest` runs it separately with nonempty data assertions. The default integration tests use H2. SQL Server configuration is a separate test profile and requires a reachable database. Passing the H2 suite does not establish identical plans or timestamp precision on every database.
+Regular tests use H2 and leave out the `performance` tag. `performanceTest` asserts that results are not empty and counts the SQL statements a page sends. The SQL Server profile needs a reachable database created with a case-sensitive collation, because the tests compare text with regard to case. A passing H2 suite does not establish the plans or the timestamp precision of another database.
 
-Continue with [Basic Usage](/en/basic-usage.md) for complete application snippets and [FAQ](/en/faq.md) for resolution failures.
+## Next step
 
-See [Security and dependency scope](/en/security.md) for the Boot 3 advisories that require an enterprise Spring fix or a framework migration.
+[First search API](/en/basic-usage.md) builds an entity, a search DTO, a service and a controller, and sends the first request.
