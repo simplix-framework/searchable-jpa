@@ -1,0 +1,5 @@
+[
+  {"field": "viewCount", "op": "sum", "value": 600, "result": 600},
+  {"field": "viewCount", "op": "avg", "value": 300.0, "result": 300.0},
+  {"field": "viewCount", "op": "max", "value": 480, "result": 480}
+]

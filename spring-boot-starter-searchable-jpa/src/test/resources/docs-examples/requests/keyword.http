@@ -1,0 +1,1 @@
+GET /api/posts?keyword=Spring&status.equals=PUBLISHED

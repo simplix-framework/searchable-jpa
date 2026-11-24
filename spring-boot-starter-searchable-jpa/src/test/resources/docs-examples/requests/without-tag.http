@@ -1,0 +1,1 @@
+GET /api/posts?withoutTag.equals=draft&sort=id.asc

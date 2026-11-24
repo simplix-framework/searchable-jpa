@@ -1,0 +1,10 @@
+POST /api/posts/search
+Content-Type: application/json
+
+{
+  "conditions": [
+    {"field": "viewCount", "searchOperator": "between", "value": 100, "value2": 500},
+    {"operator": "and", "field": "status", "searchOperator": "in", "value": ["PUBLISHED", "ARCHIVED"]}
+  ],
+  "sort": {"orders": [{"field": "id", "direction": "asc"}]}
+}

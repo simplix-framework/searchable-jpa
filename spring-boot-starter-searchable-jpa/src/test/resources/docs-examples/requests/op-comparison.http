@@ -1,0 +1,1 @@
+GET /api/posts?viewCount.greaterThanOrEqualTo=100&sort=viewCount.asc

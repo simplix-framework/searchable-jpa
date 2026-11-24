@@ -1,0 +1,1 @@
+GET /api/posts?noCommentWriter.equals=kim&sort=id.asc

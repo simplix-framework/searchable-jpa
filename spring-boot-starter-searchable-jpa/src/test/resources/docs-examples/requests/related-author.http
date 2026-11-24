@@ -1,0 +1,1 @@
+GET /api/posts?authorName.contains=kim&sort=id.asc

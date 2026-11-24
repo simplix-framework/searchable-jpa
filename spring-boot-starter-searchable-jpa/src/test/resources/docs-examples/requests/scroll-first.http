@@ -1,0 +1,1 @@
+GET /api/posts/scroll?sort=createdAt.desc&size=2

@@ -1,0 +1,15 @@
+POST /api/posts/search
+Content-Type: application/json
+
+{
+  "conditions": [
+    {"field": "status", "searchOperator": "equals", "value": "PUBLISHED"},
+    {"operator": "and", "conditions": [
+      {"field": "title", "searchOperator": "contains", "value": "Spring"},
+      {"operator": "or", "field": "title", "searchOperator": "contains", "value": "JPA"}
+    ]}
+  ],
+  "sort": {"orders": [{"field": "createdAt", "direction": "desc"}]},
+  "page": 0,
+  "size": 20
+}
