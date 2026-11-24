@@ -49,5 +49,6 @@ build-docs/
 .coregraph/
 
 ### Documentation checks ###
+__pycache__/
 node_modules/
 .e2e/
