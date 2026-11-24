@@ -10,21 +10,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21', '25']
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read the Gradle version this branch builds with
         id: gradle
         run: echo "version=$(grep -oP "gradleVersion = '\K[^']+" build.gradle)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6.1.0
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
-          java-version: '17'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.4.1
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           gradle-version: ${{ steps.gradle.outputs.version }}
 
@@ -33,13 +37,57 @@ jobs:
           ./gradlew clean build performanceTest
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7.1.0
+        if: matrix.java == '17'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
 
       - name: Check documentation
+        if: matrix.java == '17'
         run: |
           npm ci
           npm run test:docs
           ./scripts/build-docs.sh
+
+  sqlserver:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the Gradle version this branch builds with
+        id: gradle
+        run: echo "version=$(grep -oP "gradleVersion = '\K[^']+" build.gradle)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: ${{ steps.gradle.outputs.version }}
+
+      - name: Start SQL Server
+        run: |
+          # The password is the one the mssql test profile connects with, read from there so that it
+          # is written in one place.
+          password=$(grep -oP '^\s*password:\s*\K\S+' searchable-jpa-core/src/test/resources/application-mssql.yml)
+          echo "::add-mask::$password"
+          docker run -d --name mssql -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$password" -p 1433:1433 \
+            mcr.microsoft.com/mssql/server:2022-latest
+          for attempt in $(seq 1 60); do
+            if docker logs mssql 2>&1 | grep -q 'ready for client connections'; then
+              break
+            fi
+            sleep 2
+          done
+          # The tests compare text with regard to case, as the H2 run does.
+          docker exec mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$password" -C \
+            -Q "CREATE DATABASE testDB COLLATE SQL_Latin1_General_CP1_CS_AS"
+
+      - name: Test against SQL Server
+        run: |
+          ./gradlew :searchable-jpa-core:test -Dspring.profiles.active=mssql
