@@ -1,9 +1,25 @@
 # 변경 사항
 
-## 2.0.1
+## 2.1.0
 
 - CONTAINS · STARTS_WITH · ENDS_WITH가 대소문자를 구분하지 않게 하는 `searchable.pattern-matching.case-insensitive` 설정을 추가했습니다. 기본값은 꺼져 있습니다.
-- `@SearchableField(keyword = true)`와 예약 매개변수 `keyword`를 추가했습니다. 키워드 필드 가운데 하나라도 입력한 문구를 포함하면 해당 레코드를 찾고, 다른 조건과는 AND로 결합합니다. 키워드 필드가 없는 DTO는 이 매개변수를 거부합니다.
+- `@SearchableField(keyword = true)`와 예약 파라미터 `keyword`를 추가했습니다. 키워드 필드 가운데 하나라도 입력한 문구를 포함하면 해당 레코드를 찾고, 다른 조건과는 AND로 결합합니다. 키워드 필드가 없는 DTO는 이 파라미터를 거부합니다.
+- 컬렉션을 거치는 필드의 조건을 조인과 `SELECT DISTINCT` 대신 엔티티에 대한 `EXISTS` 하나로 적용합니다. 조회 결과와 전체 건수는 같으며, 대용량 객체(LOB) 열이 있는 엔티티도 SQL Server에서 검색할 수 있습니다.
+- `@SearchableField`에 `caseSensitivity`, `match`, `aggregatable` 속성을 추가했습니다. 필드별로 일치·목록·패턴 비교의 대소문자 구분 여부를 정할 수 있습니다. 컬렉션 요소 가운데 하나라도 조건에 맞는 레코드나 조건에 맞는 요소가 없는 레코드를 찾을 수 있고, `@ElementCollection`도 검색할 수 있습니다. 집계에 사용할 필드를 지정할 수 있습니다.
+- `SearchableServiceSupport`, `SearchableServiceDelegate`, `SearchAggregator`, `TimeBucketCounter`에 서버 범위를 `Specification`으로 받는 오버로드를 추가했습니다.
+- keyset 위치나 오프셋 위치에서 이어서 조회하는 `scrollWithSearch`와, 클라이언트가 다시 보낼 위치를 문자열로 변환하는 `SearchCursor`를 추가했습니다. 인터페이스나 레코드 프로젝션에 필요한 열만 조회하는 `projectWithSearch`를 추가했습니다.
+- `SearchAggregator`에 `avg`, 숫자가 아닌 필드의 `min`·`max`, DTO 필드명으로 요청하는 집계, 반환 값 개수 상한을 추가했습니다. `TimeBucketCounter`에 `LocalDateTime`·`OffsetDateTime`·`ZonedDateTime` 시간축과 달력 단위 구간(`countByCalendar`)을 추가했습니다.
+- starter가 컨트롤러 파라미터 `@SearchableParams SearchCondition<D>`를 쿼리 문자열에서 변환합니다. `@SearchableParams`는 `dev.simplecore.searchable.core.annotation` 패키지로 옮겼으며, OpenAPI 모듈의 어노테이션은 사용 중단 예정이지만 계속 인식합니다. 잘못된 검색 요청에 `ProblemDetail` 본문을 반환하는 선택 기능을 추가했습니다.
+- 요청 제한, IN 배치 크기, 쓰기 처리 단위, 쓰기 조건 필수 여부, 집계 값 개수, 구간 수 설정을 추가했습니다. starter를 사용하면 애플리케이션의 `MessageSource`와 Spring MVC 변환 서비스를 사용합니다.
+- `SearchableServiceDelegate`와 `DefaultSearchableService`가 `PlatformTransactionManager`를 선택 인자로 받습니다.
+- starter의 페이지·Hibernate 설정이 `EntityManagerFactory`에 전달되지 않던 오류를 수정했습니다. 존재하지 않는 시간대 ID를 설정하면 애플리케이션 시작을 중단합니다.
+- 날짜 처리를 수정했습니다. 날짜만 지정한 범위의 상한은 모든 입력 경로에서 그날 전체를 포함하며, 데이터베이스의 반올림 때문에 다음 날 데이터가 포함되지 않습니다. 달력에 없는 날짜는 거부합니다. `String` 필드의 검색값은 입력한 그대로 사용합니다.
+- UTC가 아닌 시간대로 기록한 오프셋 없는 열의 시간 구간 집계, SQL Server에서 패턴에 포함된 `[`, 인자가 치환되지 않고 출력되던 메시지를 수정했습니다.
+- OpenAPI 출력을 수정했습니다. OpenAPI 3.1에서도 GET 파라미터에 타입을 표시하고, 모든 스키마 참조는 문서에 있는 스키마를 가리킵니다. 애플리케이션이 작성한 작업 설명을 유지하고, `sort`를 파서가 읽는 쉼표 구분 값 하나로 표시합니다.
+- `searchable-jpa-core`는 SpringDoc과 Spring MVC를 전이 의존성으로 포함하지 않으며, starter는 계속 포함합니다. `searchable.hibernate.batch-versioned-data`는 Hibernate 7에서 효과가 없습니다. 연관 관계가 아닌 fetch 경로는 거부합니다. `countWithSearch`와 `existsWithSearch`는 페이지 번호와 크기를 확인하지 않습니다. `JoinStrategyManager`, `SearchableFieldUtils.extractJoinPaths`, `RelationshipAnalyzer`의 `isValidPath`·`countToManyPaths`·`detectManyToManyFields`, `OpenApiDocUtils.toCamelCase`를 제거했습니다. `SearchableJpaConfiguration`의 공개 메서드 `configureHibernateOptimizations`와 `configureSearchLimits`도 제거했으며, 생성자는 `Environment`와 `BeanFactory`를 받습니다.
+- DTO 제약 위반 메시지가 JVM의 기본 로캘 대신 요청의 로캘을 따릅니다.
+- 한국어 메시지에서 값 바로 뒤에 조사를 붙이던 문구를 고쳤습니다.
+- 문서를 적용 순서에 맞춰 다시 작성했습니다. 문서의 Java·HTTP·JSON 예제는 테스트가 컴파일하고 실행하는 파일에서 가져오며, `npm run test:docs`로 예제 일치, 기능 반영, 영어·한국어 구성 일치를 검사합니다.
 
 ## 2.0.0
 
@@ -16,7 +32,7 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
 - 수정·삭제를 나누어 처리하고 트랜잭션·콜백을 유지합니다. ID·버전·감사·수정 불가 속성과 생략한 기본형 수정 값을 보호합니다.
 - 반개구간 시간 집계에서 루트 엔티티를 한 번만 집계하며 데이터소스의 트랜잭션 보장을 유지합니다.
 - 안정 버전 의존성과 Gradle을 갱신하고 릴리스 전에 일반·성능 검사를 실행합니다. 새 체크아웃에서도 동일한 테스트 데이터를 생성합니다.
-- 프로젝트 하위 경로의 문서 버전 선택을 수정합니다. 언어·페이지·제목 위치를 유지하고 없는 페이지·요청 실패를 처리하며, 릴리스 배포 시 개발 문서를 보존합니다. 두 언어 문서를 갱신합니다.
+- 프로젝트 하위 경로의 문서 버전 선택을 수정합니다. 언어·페이지·제목 위치를 유지하고 없는 페이지·요청 실패를 처리하며, 릴리스 배포 시 개발 문서를 보존합니다. 영어·한국어 문서를 갱신합니다.
 
 기존 공개 서비스와 Jackson 2 메서드 시그니처를 유지합니다. 기존에 문서의 제한을 우회하던 과도한 요청은 거부합니다. [설정](./auto-configuration.md), [조회 전략](./two-phase-query-optimization.md), [API 동작](./api-reference.md)을 확인하세요.
 
@@ -49,7 +65,7 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
 #### 호환성이 깨지는 변경
 - **예외 계층 통합** [`622d7f6`](https://github.com/simplix-framework/searchable-jpa/commit/622d7f6)
   - `SearchableValidationException`과 `SearchableParseException`이 `SearchableException`(RuntimeException)만 상속
-  - 두 예외 모두 `jakarta.validation.ValidationException` 상속 제거
+  - `jakarta.validation.ValidationException` 상속 제거
   - `SearchableException` 아래 `SearchableConfigurationException`, `SearchableValidationException`, `SearchableOperationException`, `SearchableJoinException`, `SearchableParseException` 5종 유지
 - **중첩 and()/or() 조건 그룹 평가 순서 변경**
   - `SearchConditionBuilder`로 만든 중첩 `and()`/`or()` 그룹은 연산자별로 묶이지 않고, 호출 순서대로(왼쪽에서 오른쪽으로) 각 노드가 자신의 연산자로 누적 결과와 결합
@@ -61,7 +77,7 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
   - 기준 시간대는 `searchable.date-time.default-timezone`, 호스트의 `applicationZoneId` 빈, `spring.jackson.time-zone`, UTC 순으로 결정
 
 #### 개선 사항
-- 페이지네이션: `@EmbeddedId` 속성명을 메타모델에서 조회, 마지막 페이지를 넘어가는 요청에서도 total count 정확히 계산, 복합 키 구분 카운트 처리, ToMany 정렬을 GROUP BY 집계로 안정화, `CompositeKeyQueryExecutor`/`SpecificationQuerySupport`로 로직 분리
+- 페이지네이션: `@EmbeddedId` 속성명을 메타모델에서 조회, 마지막 페이지 이후를 요청해도 total count 정확히 계산, 복합 키 구분 카운트 처리, ToMany 정렬을 GROUP BY 집계로 안정화, `CompositeKeyQueryExecutor`/`SpecificationQuerySupport`로 로직 분리
 - 파싱: 콤마 분할을 IN/NOT_IN/BETWEEN 등 다중값 연산자에만 적용, 빈 패턴 값 거부, BETWEEN 두 번째 값 검증
 - 조인/조건 생성: LIKE 조건에 ESCAPE 절 추가(리터럴 `%`/`_` 정확히 처리), 빈 패턴 값 거부
 - 서비스/유틸/예외: `@MappedSuperclass` 상속 필드 반영, UUID 값 파싱 지원

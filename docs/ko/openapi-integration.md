@@ -1,48 +1,54 @@
-# OpenAPI 통합
+# OpenAPI
 
-starter에는 OpenAPI 모듈이 포함됩니다. Boot 4·라이브러리 2.x 계열은 SpringDoc 3.2.0, Boot 3·라이브러리 1.x 계열은 SpringDoc 2.10.0을 사용합니다. 애플리케이션의 Boot 버전과 호환되는 SpringDoc 계열을 유지하세요.
+이 페이지를 마치면 검색 엔드포인트의 GET 파라미터와 POST 본문이 API 문서에 기재됩니다. starter를 사용하고 SpringDoc이 클래스패스에 있어야 합니다. Boot 4와 라이브러리 2.x는 SpringDoc 3.2.0, Boot 3과 라이브러리 1.x는 SpringDoc 2.10.0을 사용합니다.
+
+![API 문서 생성](./_images/openapi-customizer-wiring.svg)
 
 ## GET 문서
 
-```java
-import dev.simplecore.searchable.openapi.annotation.SearchableParams;
-import java.util.Map;
-import org.springframework.web.bind.annotation.RequestParam;
+컨트롤러 파라미터에 `@SearchableParams`가 있으면 DTO의 선언대로 쿼리 파라미터를 기재합니다. [요청 작성](./request-formats.md)의 선언 형태를 모두 같은 방식으로 문서화합니다.
 
-// On a controller method parameter:
-// @RequestParam @SearchableParams(PostSearchDTO.class) Map<String, String> params
-```
+| 기재하는 파라미터 | 내용 |
+| --- | --- |
+| `필드.연산자` | 필드가 허용하는 연산자마다 하나씩. `operators`가 비어 있으면 모든 연산자 |
+| `sort` | 쉼표로 구분한 값 하나. 설명에 정렬할 수 있는 필드를 나열합니다 |
+| `keyword` | DTO에 키워드 필드가 있을 때만 기재합니다 |
+| `page`, `size` | 페이지 번호와 크기 |
 
-`ParameterGenerator`는 DTO 검색 필드마다 허용한 연산자의 쿼리 파라미터를 추가합니다. 연산자 선언이 비어 있으면 필드의 연산을 숨기지 않고 모든 연산자를 문서에 표시합니다. 상속한 검색 필드도 포함합니다. 정렬 설명에는 정렬 가능한 필드를 표시하고 page·size 파라미터를 추가합니다. 어노테이션은 입력 문서만 생성하므로 실제 변환에는 [기본 사용법](./basic-usage.md)의 `SearchableParamsParser.convert`를 호출하세요.
+- 상위 클래스의 검색 필드도 포함합니다.
+- `Map` 파라미터처럼 원시 값을 담기만 하는 파라미터는 문서에서 제외합니다.
+- `dev.simplecore.searchable.openapi.annotation` 패키지의 같은 이름 어노테이션은 deprecated이며 계속 동작합니다. `dev.simplecore.searchable.core.annotation.SearchableParams`를 사용하세요.
 
 ## POST 문서
 
-`@RequestBody SearchCondition<PostSearchDTO>`를 사용하세요. 사용자 정의 구성 요소는 타입 인자를 확인해 조건·그룹 스키마와 JSON 예제를 생성합니다. 타입 인자 없는 `SearchCondition`, 와일드카드나 확인할 수 없는 제네릭 타입에는 생성 정보가 부족할 수 있습니다. 컨트롤러 경계에 구체 DTO 타입을 선언하세요.
+`@RequestBody SearchCondition<PostSearchDTO>` 파라미터에는 SpringDoc이 해석한 스키마에 JSON 예제를 추가합니다. 타입 인자가 없거나 와일드카드이면 문서를 생성하지 못하므로 컨트롤러에서 DTO 타입을 명시하세요. 예제는 허용하는 필드와 연산자 중에서 고른 설명용 값이며 DTO의 제약 조건으로 검증한 값이 아닙니다.
 
-예제 생성기는 검색 필드와 허용 연산자를 선택하고, 가능한 경우 DTO 스키마 예제값을 대상 타입으로 변환합니다. 생성 오류는 로그에 기록하며 빈 예제가 생성될 수 있습니다. 문서 생성 오류가 허용하지 않은 필드의 실행 권한을 추가하지는 않습니다. 사용자 정의 검증 제약을 쓰면 생성된 예제도 확인하세요.
+## 필드 설명과 예제
 
-## 설명과 값 스키마
+필드의 설명과 예제 값은 Swagger의 `@Schema`로 지정합니다.
 
-Swagger 필드 어노테이션으로 설명·예제를 지정할 수 있습니다.
-
+<!-- snippet: PostSearchDTO.java#described -->
 ```java
-import dev.simplecore.searchable.core.annotation.SearchableField;
-import io.swagger.v3.oas.annotations.media.Schema;
-import static dev.simplecore.searchable.core.condition.operator.SearchOperator.CONTAINS;
-
-public class TitleSearchDTO {
-    @SearchableField(operators = {CONTAINS})
-    @Schema(description = "Post title", example = "Spring")
-    private String title;
-    public String getTitle() { return title; }
-}
+@SearchableField(operators = {EQUALS, CONTAINS, STARTS_WITH}, sortable = true, keyword = true)
+@Schema(description = "Post title", example = "Spring")
+@Size(min = 2, max = 100)
+private String title;
 ```
 
-날짜·시간 파라미터는 date, partial-time, date-time 형식을 구분합니다. 여러 값을 받는 GET 파라미터는 쉼표로 구분한 문자열이며 enum 값 안내도 유지합니다. 배열과 상속 필드도 처리합니다. 스키마 예제는 문서용 안내이며 권한이나 검증을 대신하지 않습니다.
+## 값의 스키마
 
-## 자동 설정과 그룹
+| 대상 | 문서의 표현 |
+| --- | --- |
+| 날짜와 시간 | 타입에 따라 `date`, `partial-time`, `date-time` 형식 |
+| `in`, `between`의 값 | 쉼표로 구분한 문자열 |
+| enum | 파라미터 스키마에 값 목록을 직접 기재 |
+| `isNull`, `isNotNull` | `true`만 허용하는 값 |
 
-`searchConditionCustomizer` 빈은 `OperationCustomizer` 타입입니다. 필요한 SpringDoc·Spring MVC 빈이 있는 Servlet 애플리케이션에서 기본적으로 켜집니다. 같은 이름의 빈을 정의해 바꾸거나 다음 설정으로 끌 수 있습니다.
+파라미터 스키마는 OpenAPI 3.0과 3.1에서 모두 타입을 기재하고, 스키마 참조는 모두 해석됩니다. 문서의 예제 값은 안내용입니다. 인가와 검증은 서버에서 수행합니다.
+
+## 설정과 API 그룹
+
+문서 생성은 이름이 `searchConditionCustomizer`인 `OperationCustomizer` 빈이 수행합니다. 서블릿 애플리케이션에 SpringDoc과 Spring MVC가 있으면 기본으로 등록합니다. 같은 이름의 빈을 정의하면 대체하고, 다음 설정으로 끕니다.
 
 ```yaml
 searchable:
@@ -50,39 +56,36 @@ searchable:
     enabled: false
 ```
 
-Searchable JPA의 문서 사용자 정의만 끄며 SpringDoc의 API 엔드포인트는 끄지 않습니다. 엔드포인트를 비활성화하려면 별도로 설정하세요.
+`searchable.swagger.enabled`는 이 라이브러리의 문서 생성만 끕니다. SpringDoc의 엔드포인트는 `springdoc.api-docs.enabled`와 `springdoc.swagger-ui.enabled`로 따로 설정하세요.
 
-```yaml
-springdoc:
-  api-docs:
-    enabled: false
-  swagger-ui:
-    enabled: false
-```
+`GroupedOpenApi`로 그룹을 직접 구성하면 전역 `OperationCustomizer`가 그룹에 적용되지 않습니다. 그룹마다 등록하세요.
 
-그룹을 직접 구성한다면 해당 그룹에 작업 사용자 정의 구성 요소를 추가하세요.
-
+<!-- snippet: PostApiGroup.java#group -->
 ```java
-import org.springdoc.core.customizers.OperationCustomizer;
-import org.springdoc.core.models.GroupedOpenApi;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Bean;
+@Configuration
+public class PostApiGroup {
 
-@Bean
-GroupedOpenApi postsApi(@Qualifier("searchConditionCustomizer") OperationCustomizer customizer) {
-    return GroupedOpenApi.builder().group("posts")
-            .pathsToMatch("/api/posts/**")
-            .addOperationCustomizer(customizer)
-            .build();
+    @Bean
+    GroupedOpenApi postsApi(@Qualifier("searchConditionCustomizer") OperationCustomizer customizer) {
+        return GroupedOpenApi.builder()
+                .group("posts")
+                .pathsToMatch("/api/posts/**")
+                .addOperationCustomizer(customizer)
+                .build();
+    }
 }
 ```
 
-파라미터가 중복되지 않도록 그룹마다 한 번만 등록하세요. 현재 설명 생성기는 작업 설명을 검색 필드 요약으로 교체합니다. 추가 API 설명은 별도 위치에 작성하거나 후속 사용자 정의 구성 요소에서 명시적으로 처리하세요.
+- 한 그룹에 같은 customizer를 두 번 등록하면 파라미터가 중복됩니다.
+- `OperationCustomizer` 빈이 여러 개여서 주입이 모호하면 `@Qualifier("searchConditionCustomizer")`로 지정하세요.
+- 애플리케이션이 `@Operation`에 쓴 설명은 유지하고, 검색 필드 요약을 뒤에 덧붙입니다.
 
-![OpenAPI 문서 생성](./_images/openapi-customizer-wiring.svg)
+## 생성 결과 확인
 
-## 실행 결과 확인
+SpringDoc의 기본 경로에서 `/v3/api-docs`와 `/swagger-ui/index.html`을 확인합니다. 그룹은 `/v3/api-docs/{group}`입니다. 별칭 필드, 상속 필드, 허용 연산자, 날짜 형식, 예제 값을 확인하세요. 문서의 페이지 예제는 일반적인 값이며 실제 최대 크기는 애플리케이션 설정이 정합니다.
 
-SpringDoc 기본 경로에서는 `/v3/api-docs`와 `/swagger-ui/index.html`을 확인하세요. 그룹별 설명은 `/v3/api-docs/{group}`에 있습니다. 별칭, 상속 필드, 허용 연산자, 날짜·시간 형식과 예제값을 확인하세요. Swagger에는 일반적인 페이지 예제를 표시하며, 실제 최대 크기는 애플리케이션 설정으로 결정합니다. 기본값과 다른 최대값을 사용한다면 스키마도 그에 맞게 조정하세요.
+이 라이브러리는 문서 엔드포인트에 인증을 적용하지 않고, 애플리케이션의 오류·응답 스키마를 생성하지 않습니다.
 
-라이브러리는 문서 엔드포인트의 인증 정책이나 애플리케이션의 오류·응답 DTO 규약을 자동으로 정의하지 않습니다. 애플리케이션에서 구성하세요. OpenAPI 설명은 서버의 DTO 검증을 대신하지 않습니다.
+## 다음 단계
+
+[오류와 메시지](./errors-and-messages.md)에서 잘못된 요청에 대한 응답을 구성합니다.

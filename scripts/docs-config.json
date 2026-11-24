@@ -1,0 +1,24 @@
+{
+  "docs": "docs",
+  "locales": [
+    "en",
+    "ko"
+  ],
+  "rootPages": [
+    "README.md"
+  ],
+  "snippetRoots": [
+    "spring-boot-starter-searchable-jpa/src/test/java/dev/simplecore/searchable/docs",
+    "spring-boot-starter-searchable-jpa/src/test/resources/docs-examples/requests",
+    "spring-boot-starter-searchable-jpa/src/test/resources/docs-examples/rejected",
+    "spring-boot-starter-searchable-jpa/src/test/resources/docs-examples/responses"
+  ],
+  "sourcedLanguages": [
+    "java",
+    "http",
+    "json"
+  ],
+  "historicalPages": [
+    "changelog.md"
+  ]
+}

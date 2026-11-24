@@ -7,9 +7,9 @@
 > Dynamic Search, Sorting, and Pagination for Spring Data JPA
 
 - Java 17+ / Spring Boot 4.1+ (3.2+ on 1.x)
-- 18 Search Operators
-- Adaptive Query Strategy and Pagination
-- OpenAPI/Swagger Integration
+- Search fields, operators and sorts declared on a DTO
+- Pages, keyset scrolling, projections, aggregates and time buckets
+- OpenAPI documents generated from the same declaration
 
 [Get Started](/en/installation.md)
 [한국어 문서](/ko/)

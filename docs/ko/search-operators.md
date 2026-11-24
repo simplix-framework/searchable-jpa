@@ -1,74 +1,136 @@
-# 검색 연산자
+# 연산자와 값
 
-지원하는 연산자는 18개입니다. DTO의 `@SearchableField`에서 허용할 연산자를 정합니다. 연산자 배열이 비어 있으면 모든 연산자를 허용하지만, 값과 실제 필드 타입이 해당 연산을 처리할 수 있어야 합니다.
+이 페이지를 마치면 연산자마다 필요한 값의 형식을 알고, 날짜 범위와 문자열 패턴이 어떻게 비교되는지 예측할 수 있습니다. [요청 작성](./request-formats.md)의 형식을 사용합니다.
 
-| Java 상수 | 요청 이름·빌더 메서드 | 의미 |
+## 연산자
+
+이름은 GET 파라미터, JSON의 `searchOperator`, 빌더 메서드에서 같습니다.
+
+| 상수 | 이름 | GET 예 | 의미 |
+| --- | --- | --- | --- |
+| `EQUALS` | `equals` | `status.equals=DRAFT` | 값과 같음 |
+| `NOT_EQUALS` | `notEquals` | `status.notEquals=DRAFT` | 값과 다름 |
+| `GREATER_THAN` | `greaterThan` | `viewCount.greaterThan=100` | 값보다 큼 |
+| `GREATER_THAN_OR_EQUAL_TO` | `greaterThanOrEqualTo` | `viewCount.greaterThanOrEqualTo=100` | 값 이상 |
+| `LESS_THAN` | `lessThan` | `viewCount.lessThan=100` | 값보다 작음 |
+| `LESS_THAN_OR_EQUAL_TO` | `lessThanOrEqualTo` | `viewCount.lessThanOrEqualTo=100` | 값 이하 |
+| `CONTAINS` | `contains` | `title.contains=Spring` | 문자열 포함 |
+| `NOT_CONTAINS` | `notContains` | `title.notContains=Spring` | 문자열 미포함 |
+| `STARTS_WITH` | `startsWith` | `title.startsWith=Spring` | 문자열로 시작 |
+| `NOT_STARTS_WITH` | `notStartsWith` | `title.notStartsWith=Spring` | 문자열로 시작하지 않음 |
+| `ENDS_WITH` | `endsWith` | `title.endsWith=notes` | 문자열로 끝남 |
+| `NOT_ENDS_WITH` | `notEndsWith` | `title.notEndsWith=notes` | 문자열로 끝나지 않음 |
+| `IS_NULL` | `isNull` | `publishedAt.isNull=true` | 값이 없음 |
+| `IS_NOT_NULL` | `isNotNull` | `publishedAt.isNotNull=true` | 값이 있음 |
+| `IN` | `in` | `status.in=DRAFT,PUBLISHED` | 목록 중 하나와 같음 |
+| `NOT_IN` | `notIn` | `status.notIn=DRAFT,PUBLISHED` | 목록의 어느 값과도 다름 |
+| `BETWEEN` | `between` | `viewCount.between=100,500` | 두 값 사이. 양 끝 포함 |
+| `NOT_BETWEEN` | `notBetween` | `viewCount.notBetween=100,500` | 두 값 사이가 아님 |
+
+필드에 사용할 수 있는 연산자는 DTO의 `operators` 선언이 정합니다. 빌더에서는 `equals("status", "DRAFT")`, `in("status", List.of(...))`, `between("viewCount", 100L, 500L)`, `isNull("publishedAt")`처럼 같은 이름의 메서드를 호출하고, 첫 조건은 `where`로 시작합니다.
+
+## 값의 개수
+
+| 연산자 | GET | JSON |
 | --- | --- | --- |
-| `EQUALS` | `equals` | 값 일치 |
-| `NOT_EQUALS` | `notEquals` | 값 불일치 |
-| `GREATER_THAN` | `greaterThan` | 초과 |
-| `GREATER_THAN_OR_EQUAL_TO` | `greaterThanOrEqualTo` | 이상 |
-| `LESS_THAN` | `lessThan` | 미만 |
-| `LESS_THAN_OR_EQUAL_TO` | `lessThanOrEqualTo` | 이하 |
-| `CONTAINS` | `contains` | 문자열 포함 |
-| `NOT_CONTAINS` | `notContains` | 문자열 미포함 |
-| `STARTS_WITH` | `startsWith` | 문자열 시작 |
-| `NOT_STARTS_WITH` | `notStartsWith` | 해당 문자열로 시작하지 않음 |
-| `ENDS_WITH` | `endsWith` | 문자열 끝 |
-| `NOT_ENDS_WITH` | `notEndsWith` | 해당 문자열로 끝나지 않음 |
-| `IS_NULL` | `isNull` | SQL NULL |
-| `IS_NOT_NULL` | `isNotNull` | SQL NULL이 아님 |
-| `IN` | `in` | 컬렉션 원소와 일치 |
-| `NOT_IN` | `notIn` | 컬렉션 원소와 불일치 |
-| `BETWEEN` | `between` | 하한·상한 포함 범위 |
-| `NOT_BETWEEN` | `notBetween` | 하한·상한 포함 범위의 바깥 |
+| `isNull`, `isNotNull` | 값을 읽지 않습니다. `isNull=false`도 null 검사입니다 | `value`를 생략합니다 |
+| `in`, `notIn` | 쉼표로 나눈 값. 1개 이상 | 배열 |
+| `between`, `notBetween` | 쉼표로 나눈 두 값 | `value`와 `value2` |
+| 그 밖의 연산자 | 값 하나 | `value` |
 
-## 요청 문법
-
-```text
-title.contains=Spring
-viewCount.greaterThanOrEqualTo=100
-status.in=PUBLISHED,DRAFT
-createdAt.between=2026-10-01T00:00:00Z,2026-10-31T23:59:59Z
-content.isNull=true
-sort=createdAt.desc,id.asc
+<!-- snippet: op-comparison.http -->
+```http
+GET /api/posts?viewCount.greaterThanOrEqualTo=100&sort=viewCount.asc
 ```
 
-NULL 검사 파라미터의 값은 무시합니다. `isNull=false`도 IS NULL을 뜻합니다. 검사를 생략하려면 조건 자체를 보내지 마세요. GET 검색은 AND로 연결하며 키마다 Map 항목 하나를 사용합니다. `+`, `&`, 공백과 비ASCII 문자는 URL 인코딩하세요. `curl --data-urlencode`를 사용하면 직접 인코딩할 때의 오류를 줄일 수 있습니다.
+조회 수가 100 이상인 Spring Boot basics(120), Spring Security notes(300), JPA paging in depth(480)를 반환합니다.
 
-IN·NOT_IN은 GET에서 쉼표로 나눈 값, JSON에서 배열을 받습니다. BETWEEN·NOT_BETWEEN은 GET에서 정확히 두 값, JSON에서 `value`와 `value2`를 받습니다. 단일 값 연산자의 쉼표는 일반 문자로 유지합니다. IN 원소 안에 쉼표가 있어야 한다면 GET 대신 JSON 배열을 사용하세요.
-
-```json
-{"conditions":[
-  {"field":"viewCount","searchOperator":"between","value":100,"value2":500},
-  {"operator":"and","field":"status","searchOperator":"in","value":["PUBLISHED","DRAFT"]}
-]}
+<!-- snippet: op-in.http -->
+```http
+GET /api/posts?status.in=PUBLISHED,DRAFT&sort=id.asc
 ```
+
+상태가 `PUBLISHED` 또는 `DRAFT`인 세 건을 반환합니다.
 
 ## 타입과 변환
 
-문자열, 숫자 기본형·래퍼, BigDecimal·BigInteger, 불리언, enum, UUID와 지원하는 Java 날짜·시간 타입을 변환합니다. 비교·범위 연산에는 서로 비교할 수 있는 호환 값이 필요합니다. enum 이름을 상수로 변환하므로 임의의 표시 이름을 사용할 수 있다고 가정하지 마세요. enum과 UUID에는 데이터베이스 매핑상 의미 있는 순서가 필요하지 않다면 일치·IN·NULL 검사를 우선 사용하세요.
+검색값은 DTO 필드의 타입으로 변환한 뒤 비교합니다.
 
-불리언은 대소문자 구분 없이 true/false, 1/0, yes/no, y/n, on/off를 받습니다. 잘못된 값에는 파싱·검증 오류가 발생합니다. `@Min`, `@Size`, `@Pattern` 같은 DTO 제약은 검색값에 적용합니다. 무관한 필수 DTO 속성은 검색을 막지 않습니다. BETWEEN은 양쪽 경계를 검증합니다.
+| 필드 타입 | 허용하는 값 |
+| --- | --- |
+| `String` | 보낸 문자열 그대로. 앞뒤 공백을 지우거나 정규화하지 않습니다 |
+| 정수·실수, `BigDecimal`, `BigInteger` | 숫자 표기 |
+| `boolean` | `true/false`, `1/0`, `yes/no`, `y/n`, `on/off`. 대소문자를 구분하지 않습니다 |
+| enum | 상수 이름 |
+| `UUID` | UUID 문자열 |
+| 날짜·시간 | 아래 형식 |
+| 그 밖의 타입 | starter를 사용하면 Spring MVC의 변환 서비스로 변환합니다. 변환기가 없으면 거부합니다 |
 
-SQL NULL은 일반 값이 아닙니다. NOT IN·NOT LIKE 같은 부정 조건에 NULL 행이 자동으로 포함되지는 않습니다. NULL도 포함해야 한다면 OR IS NULL 그룹을 명시하세요.
+크기 비교와 범위 연산자는 순서를 비교할 수 있는 타입에만 사용하세요. enum과 UUID에는 `equals`, `in`, null 검사가 적합합니다.
+
+## 날짜와 시간의 형식
+
+ISO 형식을 권장합니다. 다음 형식도 읽습니다.
+
+| 대상 타입 | 형식 |
+| --- | --- |
+| 날짜 | `uuuu-MM-dd`, `uuuu/MM/dd`, `uuuu.MM.dd`, `uuuuMMdd`, `dd-MM-uuuu`, `dd/MM/uuuu` |
+| 날짜와 시간 | `uuuu-MM-dd'T'HH:mm:ss`(소수 초 포함), `uuuu-MM-dd HH:mm:ss`, `uuuu/MM/dd HH:mm:ss`, `uuuu.MM.dd HH:mm:ss`, `dd-MM-uuuu HH:mm:ss`, `dd/MM/uuuu HH:mm:ss`, `uuuuMMddHHmmss` |
+| 오프셋이나 시간대가 있는 시각 | `2026-10-30T12:34:56Z`, `2026-10-30T12:34:56+09:00`, `2026-10-30 12:34:56 +09:00`, RFC 1123 |
+| 시간 | `HH:mm:ss`(소수 초 포함), `HHmmss`, `HHmm`, `H:mm` |
+
+- 2월 31일처럼 달력에 없는 날짜는 가까운 날짜로 바꾸지 않고 거부합니다.
+- 오프셋이 없는 값은 애플리케이션 시간대의 시각으로 해석합니다. 시간대를 정하는 순서는 [설정](./auto-configuration.md)에 있습니다.
+- `LocalDateTime` 필드에는 날짜와 시간을 모두 보내세요. 날짜만 보낼 수 있는 경우는 아래의 범위 연산자입니다.
+
+## 날짜만 쓴 범위
+
+`between`의 경계에 날짜만 쓰면 시작 날짜의 0시부터 끝 날짜 전체를 포함합니다. 끝 경계는 "다음 날 0시 미만"으로 비교하므로, 데이터베이스의 시각 정밀도와 무관하게 다음 날의 데이터를 포함하지 않습니다. 시각까지 쓴 경계는 그 시각에서 끝납니다.
+
+![날짜 범위의 경계](./_images/date-range-boundary.svg)
+
+<!-- snippet: op-between-date.http -->
+```http
+GET /api/posts?createdAt.between=2026-10-01,2026-10-03&sort=id.asc
+```
+
+10월 1일과 10월 3일에 생성한 두 건을 반환합니다. `between`은 양 끝을 포함하므로 [시간 구간 집계](./time-buckets.md)의 구간(시작 포함, 끝 제외)과 다릅니다. 이어지는 기간을 겹치지 않게 나누려면 `greaterThanOrEqualTo`와 `lessThan`을 함께 사용하세요.
 
 ## 문자열 패턴
 
-문자열 패턴은 입력과 데이터베이스 식을 소문자로 바꿔 비교합니다. 세부 대소문자 처리에는 데이터베이스의 로케일·정렬 규칙이 영향을 줍니다. `%`, `_`와 이스케이프 문자는 LIKE 적용 전에 이스케이프하고, SQL에도 ESCAPE 절을 지정합니다. 사용자가 contains 값에 `%`를 넣어 임의의 와일드카드를 만들 수는 없습니다. 비어 있거나 공백뿐인 패턴은 거부합니다.
+- 검색어의 `%`, `_`, 이스케이프 문자는 문자 그대로 비교합니다. SQL Server에서는 `[`도 이스케이프합니다. 클라이언트가 와일드카드를 넣을 수 없습니다.
+- 빈 문자열과 공백뿐인 검색어는 거부합니다.
+- 대소문자 처리는 [검색 필드 선언](./search-fields.md)의 `caseSensitivity`와 `searchable.pattern-matching.case-insensitive` 설정을 따릅니다.
+- `contains`와 `endsWith`는 앞부분이 정해지지 않은 패턴이므로 일반 인덱스를 사용하지 못합니다. 데이터가 많으면 `equals`나 `startsWith`, 또는 전문 검색을 검토하세요.
+- JSON 타입 컬럼에 패턴 연산자를 쓰면 데이터베이스가 만든 문자열 표현과 비교합니다. JSON 경로 검색이 아니므로, 구조를 검색하려면 Repository 쿼리를 작성하세요.
 
-contains·endsWith의 앞부분 와일드카드는 일반 인덱스 사용을 막을 수 있습니다. 소문자 변환에는 함수 인덱스나 적절한 데이터베이스 정렬 규칙이 필요할 수 있습니다. 용도에 따라 인덱스를 사용하는 일치·접두사 검색이나 전문 검색을 선택하세요.
+## null과 부정 조건
 
-JSON 타입 엔티티 필드에 지원하는 패턴 연산을 적용하면 텍스트 표현을 비교합니다. JSON 경로 검색이 아니며 데이터베이스의 직렬화·형 변환 방식에 영향을 받습니다. JSON 구조를 검색하려면 데이터베이스에 맞는 Repository 쿼리를 사용하세요.
+SQL의 NULL은 일반 값과 다르게 비교됩니다. `notIn`, `notEquals`, `notContains` 같은 부정 조건은 값이 없는 행을 포함하지 않습니다. 값이 없는 행도 필요하면 `isNull`을 OR 그룹으로 결합하세요.
 
-## 날짜·시간
+## 거부되는 요청
 
-`2026-10-30`, `12:34:56`, `2026-10-30T12:34:56`, `2026-10-30T12:34:56+09:00` 같은 ISO 형식을 권장합니다. DTO 필드 타입에 따라 변환합니다. 날짜·시간 타입의 BETWEEN에 날짜만 지정하면 하한은 하루 시작, 상한은 하루 끝으로 확장합니다. Instant·오프셋 변환에는 [애플리케이션 시간대 규칙](./auto-configuration.md#시간대-결정-순서)을 적용합니다.
+<!-- snippet: operator-not-allowed.http -->
+```http
+GET /api/posts?status.contains=PUB
+```
 
-BETWEEN은 양쪽 경계를 포함하며, 끝을 제외하는 `TimeBucketCounter` 기간과 다릅니다. 데이터베이스 시간 정밀도에 따라 하루 끝의 나노초가 반올림될 수 있습니다. 연속된 보고 기간에는 시작 포함·끝 제외 비교나 집계 API를 사용하고 실제 저장 정밀도를 검사하세요.
+`status`는 `CONTAINS`를 허용하지 않습니다.
 
-## 논리 그룹과 제한
+<!-- snippet: bad-enum.http -->
+```http
+GET /api/posts?status.equals=DONE
+```
 
-첫 노드로 초기 결과를 정하고, 다음 노드를 `and`·`or`로 왼쪽부터 결합합니다. 중첩 그룹은 괄호에 해당합니다. 알 수 없는 논리 연산자는 거부합니다. 그룹의 연결 연산자는 자식이 하나일 때도 그룹 전체에 적용합니다.
+`DONE`은 `PostStatus`의 상수가 아닙니다. 오류 메시지에 허용하는 상수 이름이 포함됩니다.
 
-조건·그룹 노드는 전체 1,000개, 중첩 그룹은 32단계, 조건별 컬렉션 값은 1,000개, 정렬 필드는 16개까지 허용합니다. 페이지 제한은 별도로 설정할 수 있습니다. [기본 사용법](./basic-usage.md)과 [자동 설정](./auto-configuration.md)을 참조하세요.
+<!-- snippet: bad-date.http -->
+```http
+GET /api/posts?createdAt.between=2026-02-31,2026-03-01
+```
+
+2월 31일은 달력에 없는 날짜입니다.
+
+## 다음 단계
+
+[연관 데이터 검색](./relationship-and-two-phase-query.md)에서 작성자, 댓글, 태그의 필드로 게시글을 검색합니다.
