@@ -1,6 +1,6 @@
 # 설치
 
-이 페이지를 마치면 애플리케이션의 클래스패스에 Searchable JPA가 추가됩니다. `1.2.0`을 기준으로 설명하며, `-SNAPSHOT`으로 끝나는 버전은 개발 빌드입니다.
+이 페이지를 마치면 애플리케이션의 클래스패스에 Searchable JPA가 추가됩니다. `1.2.1-SNAPSHOT`을 기준으로 설명하며, `-SNAPSHOT`으로 끝나는 버전은 개발 빌드입니다.
 
 ## 호환성
 
@@ -43,7 +43,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:1.2.0'
+    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:1.2.1-SNAPSHOT'
 }
 ```
 
@@ -53,7 +53,7 @@ dependencies {
 <dependency>
   <groupId>dev.simplecore.searchable</groupId>
   <artifactId>spring-boot-starter-searchable-jpa</artifactId>
-  <version>1.2.0</version>
+  <version>1.2.1-SNAPSHOT</version>
 </dependency>
 ```
 

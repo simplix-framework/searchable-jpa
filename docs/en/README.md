@@ -16,7 +16,7 @@ GET /api/posts?title.contains=Spring&sort=createdAt.desc&page=0&size=20
 | 1.x | 3.2.x-3.5.x | `spring-boot-3x` | Maintained |
 | 0.1.x | 2.7.x | `spring-boot-2x` | Unmaintained |
 
-This documentation describes `1.2.0`, built with Java 17 or later, Spring Boot 3.5.16 and Hibernate 6.6.59.Final. Select the documentation version that matches your dependency.
+This documentation describes `1.2.1-SNAPSHOT`, built with Java 17 or later, Spring Boot 3.5.16 and Hibernate 6.6.59.Final. Select the documentation version that matches your dependency.
 
 ## Reading order
 
