@@ -1,0 +1,1 @@
+GET /api/posts?sort=viewCount.desc,id.asc&size=2

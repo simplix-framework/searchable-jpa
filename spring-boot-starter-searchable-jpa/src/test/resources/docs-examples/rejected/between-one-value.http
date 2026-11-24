@@ -1,0 +1,1 @@
+GET /api/posts?viewCount.between=100

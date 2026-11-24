@@ -1,0 +1,6 @@
+{
+  "title": "Invalid search request",
+  "status": 400,
+  "detail": "Operator status.CONTAINS is not allowed",
+  "instance": "/api/posts"
+}

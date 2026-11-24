@@ -1,0 +1,8 @@
+POST /api/posts/search
+Content-Type: application/json
+
+{
+  "conditions": [
+    {"field": "content", "searchOperator": "contains", "value": "Spring"}
+  ]
+}

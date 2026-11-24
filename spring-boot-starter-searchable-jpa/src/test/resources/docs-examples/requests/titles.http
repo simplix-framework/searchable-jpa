@@ -1,0 +1,1 @@
+GET /api/posts/titles?status.equals=PUBLISHED&sort=id.asc
