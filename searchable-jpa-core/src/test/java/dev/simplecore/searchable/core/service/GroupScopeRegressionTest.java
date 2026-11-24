@@ -16,7 +16,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import static org.assertj.core.api.Assertions.*;
 
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:audit;DB_CLOSE_DELAY=-1", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
+@SpringBootTest(properties={"searchable.test.h2-url=jdbc:h2:mem:audit;DB_CLOSE_DELAY=-1", "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=OFF"})
 @ContextConfiguration(classes=BaseTestConfig.class)
 public class GroupScopeRegressionTest {
     @Autowired EntityManager em;

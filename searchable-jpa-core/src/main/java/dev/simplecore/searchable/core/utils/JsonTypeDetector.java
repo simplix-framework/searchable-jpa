@@ -1,14 +1,16 @@
 package dev.simplecore.searchable.core.utils;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.EntityManager;
-
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.Type;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Utility class to detect JSON-typed fields in JPA entities.
@@ -96,78 +98,35 @@ public final class JsonTypeDetector {
     }
 
     private static boolean hasHibernateJsonType(Field field) {
-        try {
-            @SuppressWarnings("unchecked")
-            Class<? extends Annotation> typeAnnotationClass =
-                (Class<? extends Annotation>) Class.forName("org.hibernate.annotations.Type");
-
-            Annotation typeAnnotation = field.getAnnotation(typeAnnotationClass);
-            if (typeAnnotation != null) {
-                Method valueMethod = typeAnnotationClass.getMethod("value");
-                Class<?> typeClass = (Class<?>) valueMethod.invoke(typeAnnotation);
-                String typeName = typeClass.getName().toLowerCase();
-                return typeName.contains("json");
-            }
-        } catch (ClassNotFoundException e) {
-            // Hibernate annotations not in classpath
-        } catch (Exception e) {
-            // Annotation not present or error reading it
-        }
-        return false;
+        Type type = field.getAnnotation(Type.class);
+        return type != null && nameMentionsJson(type.value());
     }
 
     private static boolean hasJpaJsonConverter(Field field) {
-        try {
-            @SuppressWarnings("unchecked")
-            Class<? extends Annotation> convertAnnotationClass =
-                (Class<? extends Annotation>) Class.forName("jakarta.persistence.Convert");
-
-            Annotation convertAnnotation = field.getAnnotation(convertAnnotationClass);
-            if (convertAnnotation != null) {
-                Method converterMethod = convertAnnotationClass.getMethod("converter");
-                Class<?> converterClass = (Class<?>) converterMethod.invoke(convertAnnotation);
-                String converterName = converterClass.getName().toLowerCase();
-                return converterName.contains("json");
-            }
-        } catch (ClassNotFoundException e) {
-            // JPA Convert not available
-        } catch (Exception e) {
-            // Annotation not present or error reading it
-        }
-        return false;
+        Convert convert = field.getAnnotation(Convert.class);
+        return convert != null && nameMentionsJson(convert.converter());
     }
 
     private static boolean hasJdbcTypeCodeJson(Field field) {
-        try {
-            @SuppressWarnings("unchecked")
-            Class<? extends Annotation> jdbcTypeCodeClass =
-                (Class<? extends Annotation>) Class.forName("org.hibernate.annotations.JdbcTypeCode");
-
-            Annotation jdbcTypeCodeAnnotation = field.getAnnotation(jdbcTypeCodeClass);
-            if (jdbcTypeCodeAnnotation != null) {
-                Method valueMethod = jdbcTypeCodeClass.getMethod("value");
-                int typeCode = (int) valueMethod.invoke(jdbcTypeCodeAnnotation);
-
-                // SqlTypes.JSON = 1111
-                // SqlTypes.LONGVARCHAR = -1
-                // SqlTypes.LONGNVARCHAR = -16
-                return typeCode == 1111 || typeCode == -1 || typeCode == -16;
-            }
-        } catch (ClassNotFoundException e) {
-            // Hibernate 6 annotations not available
-        } catch (Exception e) {
-            // Annotation not present or error reading it
+        JdbcTypeCode jdbcTypeCode = field.getAnnotation(JdbcTypeCode.class);
+        if (jdbcTypeCode == null) {
+            return false;
         }
-        return false;
+        int code = jdbcTypeCode.value();
+        return code == SqlTypes.JSON || code == SqlTypes.LONGVARCHAR || code == SqlTypes.LONGNVARCHAR;
     }
 
     private static boolean hasJsonColumnDefinition(Field field) {
         Column columnAnnotation = field.getAnnotation(Column.class);
         if (columnAnnotation != null) {
-            String colDef = columnAnnotation.columnDefinition().toLowerCase();
+            String colDef = columnAnnotation.columnDefinition().toLowerCase(Locale.ROOT);
             return colDef.contains("json") || colDef.contains("text");
         }
         return false;
+    }
+
+    private static boolean nameMentionsJson(Class<?> type) {
+        return type.getName().toLowerCase(Locale.ROOT).contains("json");
     }
 
     private static Field findField(Class<?> clazz, String fieldName) {

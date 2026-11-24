@@ -1,3 +1,0 @@
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-dev.simplecore.searchable.autoconfigure.SearchableOpenApiConfiguration,\
-dev.simplecore.searchable.autoconfigure.SearchableJpaConfiguration

@@ -2,315 +2,176 @@ package dev.simplecore.searchable.openapi.generator;
 
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
 import dev.simplecore.searchable.openapi.utils.OpenApiDocUtils;
-import io.swagger.v3.core.converter.AnnotatedType;
-import io.swagger.v3.core.converter.ModelConverters;
-import io.swagger.v3.core.converter.ResolvedSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import jakarta.validation.constraints.Pattern;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * Generator for parameter schemas that creates reusable schema definitions
- * in components.schemas and returns references to them.
+ * Builds the schema of each query parameter a search DTO field accepts.
+ *
+ * <p>Every schema is written inline. A reference into {@code components.schemas} would need the
+ * component registered in the document, which an operation customizer cannot do, and an inline
+ * schema is complete in every document it appears in.
+ *
+ * <p>Each schema carries its type in both forms swagger-models keeps, the single {@code type} that
+ * an OpenAPI 3.0 document is written from and the {@code types} set that a 3.1 document is written
+ * from, so the type is present whichever version SpringDoc emits.
  */
 public class ParameterSchemaGenerator {
-    private static final Logger log = LoggerFactory.getLogger(ParameterSchemaGenerator.class);
-    private static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
-    private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT);
 
-    private final ModelConverters modelConverters;
-    private final Map<String, Schema<?>> registeredSchemas;
-
-    public ParameterSchemaGenerator() {
-        this.modelConverters = ModelConverters.getInstance();
-        this.registeredSchemas = new HashMap<>();
-    }
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_INTEGER = "integer";
+    private static final String TYPE_NUMBER = "number";
+    private static final String TYPE_BOOLEAN = "boolean";
+    private static final String TYPE_ARRAY = "array";
+    private static final String TYPE_OBJECT = "object";
 
     /**
-     * Creates or gets a reference to a schema for a field parameter.
-     * For enums and complex types, returns a $ref to components.schemas.
-     * For simple types, returns inline schema.
+     * Creates the schema of one field parameter for one operator.
      */
     public Schema<?> createFieldParameterSchema(Field field, SearchOperator operator) {
         Class<?> fieldType = field.getType();
-        Type genericType = field.getGenericType();
 
-        // Special handling for different operators
         if (operator == SearchOperator.IS_NULL || operator == SearchOperator.IS_NOT_NULL) {
-            return createBooleanSchema();
+            return createNullCheckSchema();
         }
-
         if (operator == SearchOperator.IN || operator == SearchOperator.NOT_IN) {
             return createMultiValueSchema("Enter multiple values separated by comma", fieldType);
         }
-
         if (operator == SearchOperator.BETWEEN || operator == SearchOperator.NOT_BETWEEN) {
             return createMultiValueSchema("Enter two values separated by comma", fieldType);
         }
-
-        // For enum types, register as component and return reference
         if (fieldType.isEnum()) {
-            return getOrCreateEnumSchema(fieldType);
+            return createEnumSchema(fieldType);
         }
-
-        // Check if String field has enum constraints (e.g., through @Schema annotation)
         if (fieldType == String.class) {
-            Schema<?> stringWithEnumSchema = createStringSchemaWithEnumConstraints(field);
-            if (stringWithEnumSchema != null) {
-                return stringWithEnumSchema;
+            Schema<?> constrained = createStringSchemaWithEnumConstraints(field);
+            if (constrained != null) {
+                return constrained;
             }
         }
-
-        // For complex types that should be registered as components
-        if (shouldRegisterAsComponent(fieldType)) {
-            return getOrCreateComponentSchema(fieldType);
-        }
-
-        // For simple types and collections, return inline schema with generic type info
-        return createInlineSchema(fieldType, genericType);
+        return createInlineSchema(fieldType, field.getGenericType());
     }
 
-    /**
-     * Gets or creates a schema reference for an enum type.
-     * Registers the enum as a component schema and returns $ref.
-     */
-    private Schema<?> getOrCreateEnumSchema(Class<?> enumType) {
-        String schemaName = enumType.getSimpleName();
-
-        // Check if already registered
-        if (registeredSchemas.containsKey(schemaName)) {
-            return createRefSchema(schemaName);
-        }
-
-        try {
-            // Register enum as a component schema with enum values
-            ResolvedSchema resolvedSchema = modelConverters.resolveAsResolvedSchema(
-                new AnnotatedType(enumType).resolveAsRef(true)
-            );
-
-            if (resolvedSchema != null && resolvedSchema.schema != null) {
-                registeredSchemas.put(schemaName, resolvedSchema.schema);
-                log.trace("Registered enum schema as component: {}", schemaName);
-
-                // Return reference to the registered schema
-                return createRefSchema(schemaName);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to register enum schema: {}", schemaName, e);
-        }
-
-        // Fallback: create and register manually if ModelConverters fails
-        Schema<String> enumSchema = new Schema<>();
-        enumSchema.type("string");
-        enumSchema.name(schemaName);
-
-        // Extract enum constant names
-        List<String> enumValues = Arrays.stream(enumType.getEnumConstants())
-                .map(e -> ((Enum<?>) e).name())
-                .collect(Collectors.toList());
-        enumSchema.setEnum(enumValues);
-        enumSchema.description(enumType.getSimpleName() + " enum");
-
-        // Register in our cache
-        registeredSchemas.put(schemaName, enumSchema);
-
-        // Try to register with ModelConverters
-        try {
-            modelConverters.resolveAsResolvedSchema(
-                new AnnotatedType(enumType).resolveAsRef(true).name(schemaName)
-            );
-        } catch (Exception e) {
-            log.trace("Could not register with ModelConverters: {}", e.getMessage());
-        }
-
-        // Return reference
-        return createRefSchema(schemaName);
-    }
-
-    /**
-     * Gets or creates a schema reference for a complex type.
-     */
-    private Schema<?> getOrCreateComponentSchema(Class<?> type) {
-        String schemaName = type.getSimpleName();
-
-        // Check if already registered
-        if (registeredSchemas.containsKey(schemaName)) {
-            return createRefSchema(schemaName);
-        }
-
-        try {
-            // Register type as a component schema
-            ResolvedSchema resolvedSchema = modelConverters.resolveAsResolvedSchema(
-                new AnnotatedType(type).resolveAsRef(true)
-            );
-
-            if (resolvedSchema != null && resolvedSchema.schema != null) {
-                registeredSchemas.put(schemaName, resolvedSchema.schema);
-                log.trace("Registered component schema: {}", schemaName);
-                return resolvedSchema.schema;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to register component schema: {}", schemaName, e);
-        }
-
-        // Fallback to inline schema if registration fails
-        return createInlineSchema(type);
-    }
-
-    /**
-     * Creates a reference schema pointing to components.schemas.
-     */
-    private Schema<?> createRefSchema(String schemaName) {
-        Schema<?> refSchema = new Schema<>();
-        refSchema.set$ref("#/components/schemas/" + schemaName);
-        return refSchema;
-    }
-
-    /**
-     * Creates an inline schema for simple types.
-     */
-    private Schema<?> createInlineSchema(Class<?> fieldType) {
-        return createInlineSchema(fieldType, null);
-    }
-
-    /**
-     * Creates an inline schema for simple types with generic type information.
-     */
-    private Schema<?> createInlineSchema(Class<?> fieldType, Type genericType) {
-        Schema<?> schema = new Schema<>();
-
-        // Handle array types (e.g. String[]) before anything that might dereference getPackage().
-        if (fieldType.isArray()) {
-            schema.type("array");
-            schema.items(createSchemaForType(fieldType.getComponentType()));
-            return schema;
-        }
-
-        // Handle Map types
-        if (Map.class.isAssignableFrom(fieldType)) {
-            schema.type("object");
-
-            // Try to extract value type from generic type
-            Schema<?> valueSchema = new Schema<>();
-            if (genericType instanceof ParameterizedType) {
-                Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
-                if (typeArgs.length >= 2) {
-                    // Map<K, V> - use V type
-                    valueSchema = createSchemaForType(typeArgs[1]);
-                } else {
-                    valueSchema.type("string");
-                }
-            } else {
-                valueSchema.type("string");
-            }
-            schema.additionalProperties(valueSchema);
-            return schema;
-        }
-
-        // Handle List/Set/Collection types
-        if (List.class.isAssignableFrom(fieldType) ||
-            Set.class.isAssignableFrom(fieldType) ||
-            Collection.class.isAssignableFrom(fieldType)) {
-            schema.type("array");
-
-            // Try to extract element type from generic type
-            Schema<?> itemSchema = new Schema<>();
-            if (genericType instanceof ParameterizedType) {
-                Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
-                if (typeArgs.length >= 1) {
-                    // List<T> - use T type
-                    itemSchema = createSchemaForType(typeArgs[0]);
-                } else {
-                    itemSchema.type("string");
-                }
-            } else {
-                itemSchema.type("string");
-            }
-            schema.items(itemSchema);
-            return schema;
-        }
-
-        // Handle basic types
-        return createSchemaForType(fieldType);
-    }
-
-    /**
-     * Creates a schema for a given type (used for generic type arguments).
-     */
-    private Schema<?> createSchemaForType(Type type) {
-        Schema<?> schema = new Schema<>();
-
-        // Extract raw type if it's a ParameterizedType
-        Class<?> rawType;
-        if (type instanceof ParameterizedType) {
-            rawType = (Class<?>) ((ParameterizedType) type).getRawType();
-        } else if (type instanceof Class) {
-            rawType = (Class<?>) type;
-        } else {
-            // Fallback to string for unknown types
-            schema.type("string");
-            return schema;
-        }
-
-        // Handle date/time types
-        if (rawType == LocalDateTime.class
-                || rawType == Instant.class
-                || rawType == OffsetDateTime.class
-                || rawType == ZonedDateTime.class) {
-            // Absolute-instant and datetime search params: emit format:date-time so the
-            // frontend codegen selects a date-time picker for these parameters.
-            schema.type("string").format("date-time");
-            schema.description("Format: date-time (RFC 3339)");
-        } else if (rawType == LocalDate.class) {
-            // Calendar-date search params: emit format:date for a date-only picker.
-            schema.type("string").format("date");
-            schema.description("Format: yyyy-MM-dd");
-        } else if (rawType == LocalTime.class) {
-            // Wall-clock time search params: emit format:partial-time so the frontend codegen
-            // selects a time picker, matching the LocalTime response schema.
-            schema.type("string").format("partial-time");
-            schema.description("Format: HH:mm[:ss]");
-        } else if (rawType == Long.class || rawType == long.class) {
-            schema.type("integer").format("int64");
-        } else if (rawType == Integer.class || rawType == int.class) {
-            schema.type("integer").format("int32");
-        } else if (rawType == Double.class || rawType == double.class) {
-            schema.type("number").format("double");
-        } else if (rawType == Float.class || rawType == float.class) {
-            schema.type("number").format("float");
-        } else if (rawType == Boolean.class || rawType == boolean.class) {
-            schema.type("boolean");
-        } else {
-            schema.type("string");
-        }
-
+    private static <S extends Schema<?>> S typed(S schema, String type) {
+        schema.setType(type);
+        schema.addType(type);
         return schema;
     }
 
+    private Schema<?> createEnumSchema(Class<?> enumType) {
+        Schema<String> schema = typed(new Schema<>(), TYPE_STRING);
+        schema.setEnum(enumNames(enumType));
+        return schema;
+    }
+
+    private static List<String> enumNames(Class<?> enumType) {
+        return Arrays.stream(enumType.getEnumConstants())
+                .map(constant -> ((Enum<?>) constant).name())
+                .collect(Collectors.toList());
+    }
+
+    private Schema<?> createInlineSchema(Class<?> fieldType, Type genericType) {
+        if (fieldType.isArray()) {
+            Schema<?> schema = typed(new Schema<>(), TYPE_ARRAY);
+            schema.items(createSchemaForType(fieldType.getComponentType()));
+            return schema;
+        }
+        if (Map.class.isAssignableFrom(fieldType)) {
+            Schema<?> schema = typed(new Schema<>(), TYPE_OBJECT);
+            schema.additionalProperties(typeArgumentSchema(genericType, 1));
+            return schema;
+        }
+        if (Collection.class.isAssignableFrom(fieldType)) {
+            Schema<?> schema = typed(new Schema<>(), TYPE_ARRAY);
+            schema.items(typeArgumentSchema(genericType, 0));
+            return schema;
+        }
+        return createSchemaForType(fieldType);
+    }
+
+    private Schema<?> typeArgumentSchema(Type genericType, int index) {
+        if (genericType instanceof ParameterizedType parameterized
+                && parameterized.getActualTypeArguments().length > index) {
+            return createSchemaForType(parameterized.getActualTypeArguments()[index]);
+        }
+        return typed(new Schema<>(), TYPE_STRING);
+    }
+
     /**
-     * Creates a boolean schema.
+     * Creates the schema of a value type. A type with no entry here is sent as text.
      */
-    private Schema<?> createBooleanSchema() {
-        return new Schema<>().type("boolean");
+    private Schema<?> createSchemaForType(Type type) {
+        Class<?> rawType = type instanceof ParameterizedType parameterized
+                ? (Class<?>) parameterized.getRawType()
+                : type instanceof Class<?> clazz ? clazz : String.class;
+
+        if (rawType == LocalDateTime.class || rawType == Instant.class || rawType == OffsetDateTime.class
+                || rawType == ZonedDateTime.class || rawType == Date.class) {
+            // Absolute-instant and datetime search params: emit format:date-time so the
+            // frontend codegen selects a date-time picker for these parameters.
+            return typed(new Schema<>(), TYPE_STRING).format("date-time").description("Format: date-time (RFC 3339)");
+        }
+        if (rawType == LocalDate.class) {
+            // Calendar-date search params: emit format:date for a date-only picker.
+            return typed(new Schema<>(), TYPE_STRING).format("date").description("Format: yyyy-MM-dd");
+        }
+        if (rawType == LocalTime.class) {
+            // Wall-clock time search params: emit format:partial-time so the frontend codegen
+            // selects a time picker, matching the LocalTime response schema.
+            return typed(new Schema<>(), TYPE_STRING).format("partial-time").description("Format: HH:mm[:ss]");
+        }
+        if (rawType == Long.class || rawType == long.class || rawType == BigInteger.class) {
+            return typed(new Schema<>(), TYPE_INTEGER).format("int64");
+        }
+        if (rawType == Integer.class || rawType == int.class || rawType == Short.class || rawType == short.class
+                || rawType == Byte.class || rawType == byte.class) {
+            return typed(new Schema<>(), TYPE_INTEGER).format("int32");
+        }
+        if (rawType == Double.class || rawType == double.class || rawType == BigDecimal.class) {
+            return typed(new Schema<>(), TYPE_NUMBER).format("double");
+        }
+        if (rawType == Float.class || rawType == float.class) {
+            return typed(new Schema<>(), TYPE_NUMBER).format("float");
+        }
+        if (rawType == Boolean.class || rawType == boolean.class) {
+            return typed(new Schema<>(), TYPE_BOOLEAN);
+        }
+        if (rawType == UUID.class) {
+            return typed(new Schema<>(), TYPE_STRING).format("uuid");
+        }
+        if (rawType.isEnum()) {
+            return createEnumSchema(rawType);
+        }
+        return typed(new Schema<>(), TYPE_STRING);
+    }
+
+    /**
+     * The schema of {@code isNull} and {@code isNotNull}. Sending the parameter applies the check;
+     * its value is not read, so the only value offered is {@code true}.
+     */
+    private Schema<?> createNullCheckSchema() {
+        Schema<Boolean> schema = typed(new Schema<>(), TYPE_BOOLEAN);
+        schema.setEnum(List.of(Boolean.TRUE));
+        schema.setDescription("Send true to apply the check; the value itself is not read");
+        return schema;
     }
 
     /**
@@ -319,129 +180,64 @@ public class ParameterSchemaGenerator {
      * lists them even though the input is entered as a comma-separated string.
      */
     private Schema<?> createMultiValueSchema(String description, Class<?> fieldType) {
-        Schema<String> schema = new Schema<>();
-        schema.type("string");
+        Schema<String> schema = typed(new Schema<>(), TYPE_STRING);
         schema.description(description);
         if (fieldType.isEnum()) {
-            List<String> enumValues = Arrays.stream(fieldType.getEnumConstants())
-                    .map(e -> ((Enum<?>) e).name())
-                    .collect(Collectors.toList());
-            schema.setEnum(enumValues);
+            schema.setEnum(enumNames(fieldType));
         }
         return schema;
     }
 
-    /**
-     * Determines if a type should be registered as a component schema.
-     */
-    private boolean shouldRegisterAsComponent(Class<?> type) {
-        // Arrays, primitives, and types without a package (e.g. arrays) are never components.
-        // Class.getPackage() is null for array types, so this guard also prevents a NullPointerException.
-        if (type.isArray() || type.isPrimitive() || type.getPackage() == null) {
-            return false;
-        }
-
-        // Don't register Java collections and maps as components
-        if (Map.class.isAssignableFrom(type) ||
-            Collection.class.isAssignableFrom(type) ||
-            List.class.isAssignableFrom(type) ||
-            Set.class.isAssignableFrom(type)) {
-            return false;
-        }
-
-        // Register enums and custom domain types as components
-        return type.isEnum() ||
-               (!type.getPackage().getName().startsWith("java.") &&
-                !type.getPackage().getName().startsWith("javax.") &&
-                !type.getPackage().getName().startsWith("jakarta."));
-    }
-
-    /**
-     * Creates pagination parameter schemas.
-     */
     public Schema<?> createPageSchema() {
-        return new Schema<Integer>()
-                .type("integer")
+        return typed(new Schema<Integer>(), TYPE_INTEGER)
                 .format("int32")
-                .minimum(new BigDecimal(0))
+                .minimum(BigDecimal.ZERO)
                 .description("Page number (0-based)");
     }
 
     public Schema<?> createSizeSchema() {
-        return new Schema<Integer>()
-                .type("integer")
+        return typed(new Schema<Integer>(), TYPE_INTEGER)
                 .format("int32")
-                .minimum(new BigDecimal(1))
+                .minimum(BigDecimal.ONE)
                 .description("Items per page");
     }
 
     /**
-     * Creates sort parameter schema.
+     * The sort parameter: field.direction entries, sent as one comma-separated value.
      */
-    @SuppressWarnings("unchecked")
     public Schema<?> createSortSchema() {
-        return new Schema<>()
-                .type("array")
-                .items(new Schema<String>().type("string"));
+        Schema<?> schema = typed(new Schema<>(), TYPE_ARRAY);
+        schema.items(typed(new Schema<String>(), TYPE_STRING));
+        return schema;
     }
 
     /**
-     * Creates a String schema with enum constraints if applicable.
-     * Checks for @Schema annotation with allowableValues or implementation.
-     * Also checks for @Pattern annotations that might indicate enum-like constraints.
+     * Creates a String schema listing its allowed values when the field declares them, through
+     * {@code @Schema(allowableValues)}, {@code @Schema(implementation = SomeEnum.class)} or a
+     * {@code @Pattern} that is a plain list of alternatives.
      */
     private Schema<?> createStringSchemaWithEnumConstraints(Field field) {
-        // Check for @Schema annotation
         var schemaAnnotation = OpenApiDocUtils.getSchemaAnnotation(field);
-
         if (schemaAnnotation != null) {
-            // Check for allowableValues
-            String[] allowableValues = schemaAnnotation.allowableValues();
-            if (allowableValues != null && allowableValues.length > 0) {
-                Schema<String> stringSchema = new Schema<>();
-                stringSchema.type("string");
-                stringSchema.setEnum(Arrays.asList(allowableValues));
+            List<String> allowed = schemaAnnotation.allowableValues().length > 0
+                    ? Arrays.asList(schemaAnnotation.allowableValues())
+                    : schemaAnnotation.implementation().isEnum() ? enumNames(schemaAnnotation.implementation()) : List.of();
+            if (!allowed.isEmpty()) {
+                Schema<String> schema = typed(new Schema<>(), TYPE_STRING);
+                schema.setEnum(allowed);
                 if (!schemaAnnotation.description().isEmpty()) {
-                    stringSchema.description(schemaAnnotation.description());
+                    schema.description(schemaAnnotation.description());
                 }
-                return stringSchema;
-            }
-
-            // Check for implementation (enum reference)
-            Class<?> implementation = schemaAnnotation.implementation();
-            if (!implementation.equals(Void.class) && implementation.isEnum()) {
-                // Create string schema with enum values
-                Schema<String> stringSchema = new Schema<>();
-                stringSchema.type("string");
-                List<String> enumValues = Arrays.stream(implementation.getEnumConstants())
-                        .map(e -> ((Enum<?>) e).name())
-                        .collect(Collectors.toList());
-                stringSchema.setEnum(enumValues);
-                if (!schemaAnnotation.description().isEmpty()) {
-                    stringSchema.description(schemaAnnotation.description());
-                }
-                return stringSchema;
+                return schema;
             }
         }
-
-        // Check for @Pattern annotation that might indicate enum-like constraints
-        Pattern pattern =
-            field.getAnnotation(Pattern.class);
-        if (pattern != null) {
-            String regexp = pattern.regexp();
-            // Check for common enum-like patterns (e.g., "ACTIVE|INACTIVE|PENDING")
-            if (regexp.contains("|") && !regexp.contains("[") && !regexp.contains("*")) {
-                String[] values = regexp.replace("^", "").replace("$", "").replace("(", "").replace(")", "").split("\\|");
-                if (values.length > 1 && values.length <= 20) { // Reasonable limit for enum-like values
-                    Schema<String> stringSchema = new Schema<>();
-                    stringSchema.type("string");
-                    stringSchema.setEnum(Arrays.asList(values));
-                    stringSchema.description("Pattern: " + regexp);
-                    return stringSchema;
-                }
-            }
+        List<String> alternatives = OpenApiDocUtils.patternAlternatives(field);
+        if (alternatives.size() > 1) {
+            Schema<String> schema = typed(new Schema<>(), TYPE_STRING);
+            schema.setEnum(alternatives);
+            schema.description("Pattern: " + field.getAnnotation(Pattern.class).regexp());
+            return schema;
         }
-
-        return null; // No enum constraints found
+        return null;
     }
 }

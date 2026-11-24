@@ -1,22 +1,25 @@
 package dev.simplecore.searchable.core.condition.validator;
 
-import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.SearchCondition;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
+import dev.simplecore.searchable.core.exception.SearchableParseException;
 import dev.simplecore.searchable.core.exception.SearchableValidationException;
 import dev.simplecore.searchable.core.i18n.MessageUtils;
+import dev.simplecore.searchable.core.utils.SearchableDtoMetadata;
+import dev.simplecore.searchable.core.utils.SearchableDtoMetadata.SearchField;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import dev.simplecore.searchable.core.utils.SearchableValueParser;
-import jakarta.validation.*;
-import java.beans.Introspector;
-import java.beans.PropertyDescriptor;
-import java.lang.reflect.Field;
+import jakarta.validation.Configuration;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.springframework.util.ClassUtils;
+import org.springframework.validation.beanvalidation.LocaleContextMessageInterpolator;
 
 /**
  * Validator for search conditions that ensures all search criteria are valid and consistent.
@@ -29,33 +32,36 @@ import org.springframework.util.ClassUtils;
  *   <li>Collection values for IN/NOT_IN operators</li>
  * </ul>
  *
+ * <p>The DTO is read by its fields, so a record or a class without accessors validates the same
+ * way as a JavaBean. Bean Validation constraints declared on a field apply to every value searched
+ * for on it, whichever operator carries the value.
+ *
  * <p>Example usage:
  * <pre>
  * SearchCondition condition = ...;
  * SearchConditionValidator validator = new SearchConditionValidator(UserDTO.class, condition);
- * validator.validate(); // throws ValidationException if any validation fails
+ * validator.validate(); // throws SearchableValidationException if any validation fails
  * </pre>
  */
 public class SearchConditionValidator<D> {
-    /**
-     * Factory for creating validators for bean validation.
-     */
-    private static final ValidatorFactory VALIDATOR_FACTORY = Validation.buildDefaultValidatorFactory();
 
-    /**
-     * Validator instance for bean validation.
-     */
+    private static final ValidatorFactory VALIDATOR_FACTORY = localeAwareFactory();
     private static final Validator VALIDATOR = VALIDATOR_FACTORY.getValidator();
 
-    /**
-     * The DTO class type that defines the searchable fields.
-     */
     private final Class<?> dtoClass;
+    private final SearchCondition<D> condition;
+    private final SearchableDtoMetadata metadata;
 
     /**
-     * The search condition to validate.
+     * A violated constraint is reported in the locale of the request, as every message of the
+     * library is, rather than in the default locale of the JVM.
      */
-    private final SearchCondition<D> condition;
+    private static ValidatorFactory localeAwareFactory() {
+        Configuration<?> configuration = Validation.byDefaultProvider().configure();
+        return configuration
+                .messageInterpolator(new LocaleContextMessageInterpolator(configuration.getDefaultMessageInterpolator()))
+                .buildValidatorFactory();
+    }
 
     /**
      * Creates a new validator for the specified DTO class and search condition.
@@ -66,14 +72,14 @@ public class SearchConditionValidator<D> {
     public SearchConditionValidator(Class<?> dtoClass, SearchCondition<D> condition) {
         this.dtoClass = dtoClass;
         this.condition = condition;
+        this.metadata = SearchableDtoMetadata.of(dtoClass);
     }
 
     /**
-     * Validates the entire search condition.
-     * This includes pagination parameters, field existence, operator compatibility,
-     * and value type compatibility.
+     * Validates the entire search condition: pagination parameters, field existence, operator
+     * compatibility, and value type compatibility.
      *
-     * @throws ValidationException if any validation fails
+     * @throws SearchableValidationException if any validation fails
      */
     public void validate() {
         validatePagination();
@@ -81,15 +87,10 @@ public class SearchConditionValidator<D> {
     }
 
     /**
-     * Validates pagination parameters if they are present.
-     * Both page and size must be set together, and must be valid numbers.
-     *
-     * @throws ValidationException if pagination parameters are invalid
+     * Validates the pagination parameters that are present. Either may be sent alone; the missing
+     * one takes its default when the query is built.
      */
     private void validatePagination() {
-        if (condition.getPage() != null ^ condition.getSize() != null) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.pagination.both.required"));
-        }
         if (condition.getPage() != null && condition.getPage() < 0) {
             throw new SearchableValidationException(MessageUtils.getMessage("validator.pagination.page.invalid"));
         }
@@ -98,16 +99,10 @@ public class SearchConditionValidator<D> {
         }
     }
 
-    /**
-     * Recursively validates a list of search condition nodes.
-     * Handles both individual conditions and nested condition groups.
-     *
-     * @param nodes the list of nodes to validate
-     * @throws ValidationException if any node fails validation
-     */
     private void validateNodes(List<SearchCondition.Node> nodes) {
-        if (nodes == null) return;
-
+        if (nodes == null) {
+            return;
+        }
         for (SearchCondition.Node node : nodes) {
             if (node instanceof SearchCondition.Condition) {
                 validateCondition((SearchCondition.Condition) node);
@@ -117,46 +112,70 @@ public class SearchConditionValidator<D> {
         }
     }
 
-    /**
-     * Validates a single search condition.
-     * Checks field existence, operator compatibility, and value type compatibility.
-     *
-     * @param condition the condition to validate
-     * @throws ValidationException if the condition is invalid
-     */
     private void validateCondition(SearchCondition.Condition condition) {
         String fieldName = condition.getField();
-        PropertyDescriptor pd = findPropertyDescriptor(fieldName);
+        SearchField field = requireSearchableField(fieldName);
+        SearchOperator operator = condition.getSearchOperator();
+        if (operator == null || !field.allows(operator)) {
+            throw new SearchableValidationException(
+                    MessageUtils.getMessage("validator.operator.not.allowed",
+                            new Object[]{operator, fieldName, Arrays.toString(field.annotation().operators())}));
+        }
 
-        validateField(pd, fieldName);
-        validateOperator(condition.getSearchOperator(), fieldName);
-
-        // For JSON-typed fields (Map, Collection, Array), skip standard value validation
-        // JSON fields are searched as strings in the database
-        if (isJsonTypedFieldInDto(fieldName)) {
+        // A map, collection or array field is stored as text and searched as text.
+        if (field.storedAsText()) {
             return;
         }
 
-        validateValue(pd.getPropertyType(), condition.getValue(), condition.getSearchOperator(), fieldName);
-        validateSecondValueForBetween(pd.getPropertyType(), condition, fieldName);
+        validateValue(field.type(), condition.getValue(), operator, fieldName);
+        boolean range = operator == SearchOperator.BETWEEN || operator == SearchOperator.NOT_BETWEEN;
+        if (range) {
+            if (condition.getValue2() == null) {
+                throw new SearchableValidationException(
+                        MessageUtils.getMessage("validator.between.value2.required", new Object[]{operator}));
+            }
+            validateSingleValue(field.type(), condition.getValue2(), fieldName);
+        }
 
         // Validate only the searched property, not unrelated required DTO fields.
-        if (condition.getSearchOperator() == SearchOperator.IS_NULL ||
-                condition.getSearchOperator() == SearchOperator.IS_NOT_NULL) {
+        if (operator == SearchOperator.IS_NULL || operator == SearchOperator.IS_NOT_NULL) {
             return;
         }
         if (condition.getValue() instanceof Collection<?> values) {
-            for (Object value : values) validateConstraints(fieldName, pd.getPropertyType(), value);
+            for (Object value : values) {
+                validateConstraints(fieldName, field.type(), value);
+            }
         } else {
-            validateConstraints(fieldName, pd.getPropertyType(), condition.getValue());
+            validateConstraints(fieldName, field.type(), condition.getValue());
         }
-        if (condition.getSearchOperator() == SearchOperator.BETWEEN ||
-                condition.getSearchOperator() == SearchOperator.NOT_BETWEEN) {
-            validateConstraints(fieldName, pd.getPropertyType(), condition.getValue2());
+        if (range) {
+            validateConstraints(fieldName, field.type(), condition.getValue2());
         }
     }
 
+    /**
+     * @return the searchable field of that name
+     * @throws SearchableValidationException when the DTO has no such field, or the field is not
+     *         annotated as searchable
+     */
+    private SearchField requireSearchableField(String fieldName) {
+        SearchField field = metadata.field(fieldName);
+        if (field != null) {
+            return field;
+        }
+        if (fieldName != null && SearchableFieldUtils.findFieldInHierarchy(dtoClass, fieldName) != null) {
+            throw new SearchableValidationException(
+                    MessageUtils.getMessage("validator.field.not.searchable", new Object[]{fieldName}));
+        }
+        throw new SearchableValidationException(
+                MessageUtils.getMessage("validator.field.not.found", new Object[]{fieldName, dtoClass.getSimpleName()}));
+    }
+
     private void validateConstraints(String fieldName, Class<?> type, Object value) {
+        // A field that carries no constraint has nothing to check.
+        if (VALIDATOR.getConstraintsForClass(dtoClass).getConstraintsForProperty(fieldName) == null) {
+            return;
+        }
         Object converted = value instanceof String ? SearchableValueParser.parseValue((String) value, type) : value;
         Set<? extends ConstraintViolation<?>> violations = VALIDATOR.validateValue(dtoClass, fieldName, converted);
         if (!violations.isEmpty()) {
@@ -164,200 +183,54 @@ public class SearchConditionValidator<D> {
         }
     }
 
-    private Field requireField(String name) throws NoSuchFieldException {
-        Field field = SearchableFieldUtils.findFieldInHierarchy(dtoClass, name);
-        if (field == null) throw new NoSuchFieldException(name);
-        return field;
-    }
-
-    /**
-     * Checks if a DTO field is JSON-typed (Map or Collection stored as TEXT in DB).
-     * For DTO fields, we check if the field type is a complex type (Map, Collection, Array)
-     * since these types in DTOs typically map to JSON-stored entity fields.
-     *
-     * @param fieldName the field name
-     * @return true if the field is JSON-typed
-     */
-    private boolean isJsonTypedFieldInDto(String fieldName) {
-        try {
-            Field field = requireField(fieldName);
-            Class<?> fieldType = field.getType();
-            return Map.class.isAssignableFrom(fieldType) ||
-                   Collection.class.isAssignableFrom(fieldType) ||
-                   fieldType.isArray();
-        } catch (NoSuchFieldException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Finds the property descriptor for a field in the DTO class.
-     *
-     * @param fieldName the name of the field
-     * @return the property descriptor for the field
-     * @throws ValidationException if the field cannot be found
-     */
-    private PropertyDescriptor findPropertyDescriptor(String fieldName) {
-        try {
-            return Arrays.stream(Introspector.getBeanInfo(dtoClass).getPropertyDescriptors())
-                    .filter(pd -> pd.getName().equals(fieldName))
-                    .findFirst()
-                    .orElse(null);
-        } catch (Exception e) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.property.not.found", new Object[]{fieldName}));
-        }
-    }
-
-    /**
-     * Validates that a field exists and is marked as searchable.
-     *
-     * @param pd        the property descriptor of the field
-     * @param fieldName the name of the field
-     * @throws ValidationException if the field is not valid for searching
-     */
-    private void validateField(PropertyDescriptor pd, String fieldName) {
-        if (pd == null) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.field.not.found", new Object[]{fieldName, dtoClass.getSimpleName()}));
-        }
-
-        try {
-            SearchableField annotation = requireField(fieldName).getAnnotation(SearchableField.class);
-            if (annotation == null) {
-                throw new SearchableValidationException(MessageUtils.getMessage("validator.field.not.searchable", new Object[]{fieldName}));
-            }
-        } catch (NoSuchFieldException e) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.field.not.found", new Object[]{fieldName, dtoClass.getSimpleName()}));
-        }
-    }
-
-    /**
-     * Validates that an operator is allowed for a field.
-     *
-     * @param operator  the search operator to validate
-     * @param fieldName the name of the field
-     * @throws ValidationException if the operator is not allowed for the field
-     */
-    private void validateOperator(SearchOperator operator, String fieldName) {
-        try {
-            SearchableField annotation = requireField(fieldName).getAnnotation(SearchableField.class);
-            if (annotation == null) {
-                throw new SearchableValidationException(MessageUtils.getMessage("validator.field.not.searchable", new Object[]{fieldName}));
-            }
-            if (operator == null || (annotation.operators().length > 0 && !Arrays.asList(annotation.operators()).contains(operator))) {
-                throw new SearchableValidationException(
-                        MessageUtils.getMessage("validator.operator.not.allowed",
-                                new Object[]{operator, fieldName, Arrays.toString(annotation.operators())})
-                );
-            }
-        } catch (NoSuchFieldException e) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.field.not.found", new Object[]{fieldName, dtoClass.getSimpleName()}));
-        }
-    }
-
-    /**
-     * Validates a search value against a field's type and operator.
-     *
-     * @param targetType the expected type of the value
-     * @param value      the value to validate
-     * @param operator   the search operator being used
-     * @param fieldName  the name of the field
-     * @throws ValidationException if the value is not valid for the field and operator
-     */
     private void validateValue(Class<?> targetType, Object value, SearchOperator operator, String fieldName) {
-        // Validate null value
         if (value == null) {
             if (operator != SearchOperator.IS_NULL && operator != SearchOperator.IS_NOT_NULL) {
-                throw new SearchableValidationException(MessageUtils.getMessage("validator.value.null.not.allowed", new Object[]{operator}));
+                throw new SearchableValidationException(
+                        MessageUtils.getMessage("validator.value.null.not.allowed", new Object[]{operator}));
             }
             return;
         }
-
-        // Validate IN/NOT_IN operators
         if (operator == SearchOperator.IN || operator == SearchOperator.NOT_IN) {
             validateCollectionValue(targetType, value, fieldName);
             return;
         }
-
-        // Validate single value
         validateSingleValue(targetType, value, fieldName);
     }
 
-    /**
-     * Validates the second value (value2) for BETWEEN/NOT_BETWEEN operators. The second bound must be
-     * present and convertible to the field type, mirroring the validation of the primary value.
-     *
-     * @param targetType the expected type of the value
-     * @param condition  the condition to validate
-     * @param fieldName  the name of the field
-     * @throws ValidationException if value2 is missing or has an incompatible type
-     */
-    private void validateSecondValueForBetween(Class<?> targetType, SearchCondition.Condition condition, String fieldName) {
-        SearchOperator operator = condition.getSearchOperator();
-        if (operator != SearchOperator.BETWEEN && operator != SearchOperator.NOT_BETWEEN) {
-            return;
-        }
-
-        Object value2 = condition.getValue2();
-        if (value2 == null) {
-            throw new SearchableValidationException(
-                    MessageUtils.getMessage("validator.between.value2.required", new Object[]{operator}));
-        }
-        validateSingleValue(targetType, value2, fieldName);
-    }
-
-    /**
-     * Validates a collection value for IN/NOT_IN operators.
-     *
-     * @param targetType the expected type of the collection elements
-     * @param value      the collection to validate
-     * @param fieldName  the name of the field
-     * @throws ValidationException if the collection or its elements are not valid
-     */
     private void validateCollectionValue(Class<?> targetType, Object value, String fieldName) {
         if (!(value instanceof Collection)) {
             throw new SearchableValidationException(
-                    MessageUtils.getMessage("validator.value.must.be.collection", new Object[]{fieldName, value.getClass().getSimpleName()})
-            );
+                    MessageUtils.getMessage("validator.value.must.be.collection",
+                            new Object[]{fieldName, value.getClass().getSimpleName()}));
         }
-
         Collection<?> collection = (Collection<?>) value;
         if (collection.isEmpty()) {
-            throw new SearchableValidationException(MessageUtils.getMessage("validator.collection.empty", new Object[]{fieldName}));
+            throw new SearchableValidationException(
+                    MessageUtils.getMessage("validator.collection.empty", new Object[]{fieldName}));
         }
-
         for (Object item : collection) {
             validateSingleValue(targetType, item, fieldName);
         }
     }
 
     /**
-     * Validates a single value against a field's type.
-     * Handles type conversion for various data types including numbers, dates, and enums.
-     *
-     * @param targetType the expected type of the value
-     * @param value      the value to validate
-     * @param fieldName  the name of the field
-     * @throws ValidationException if the value cannot be converted to the target type
+     * Checks that a value is of the field's type, or text that can be read as it.
      */
     private void validateSingleValue(Class<?> targetType, Object value, String fieldName) {
-        try {
-            if (ClassUtils.resolvePrimitiveIfNecessary(targetType).isInstance(value)) {
-                return;
-            }
-
-            if (value instanceof String) {
-                SearchableValueParser.parseValue((String) value, targetType);
-                return;
-            }
-
+        if (value == null || ClassUtils.resolvePrimitiveIfNecessary(targetType).isInstance(value)) {
+            return;
+        }
+        if (!(value instanceof String)) {
             throw new SearchableValidationException(
                     MessageUtils.getMessage("validator.value.type.conversion",
-                            new Object[]{value.getClass().getSimpleName(), targetType.getSimpleName(), fieldName})
-            );
-        } catch (Exception e) {
+                            new Object[]{value.getClass().getSimpleName(), targetType.getSimpleName(), fieldName}));
+        }
+        try {
+            SearchableValueParser.parseValue((String) value, targetType);
+        } catch (SearchableParseException e) {
             throw new SearchableValidationException(
-                    MessageUtils.getMessage("validator.value.invalid", new Object[]{fieldName, e.getMessage()})
-            );
+                    MessageUtils.getMessage("validator.value.invalid", new Object[]{fieldName, e.getMessage()}), e);
         }
     }
-} 
+}

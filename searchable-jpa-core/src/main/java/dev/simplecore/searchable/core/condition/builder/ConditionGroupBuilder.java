@@ -52,8 +52,10 @@ public class ConditionGroupBuilder implements ChainedCondition {
      */
     private SearchCondition.Condition createCondition(LogicalOperator logicalOperator, String field,
                                                       SearchOperator searchOperator, Object value, Object value2) {
-        String entityField = SearchableFieldUtils.getEntityFieldFromDto(dtoClass, field);
-        return new SearchCondition.Condition(logicalOperator, field, searchOperator, value, value2, entityField);
+        SearchCondition.Condition condition =
+                new SearchCondition.Condition(logicalOperator, field, searchOperator, value, value2, null);
+        SearchableFieldUtils.applyDtoMapping(condition, dtoClass);
+        return condition;
     }
 
     /**

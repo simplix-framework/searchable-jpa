@@ -9,14 +9,16 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import dev.simplecore.searchable.core.annotation.CollectionMatch;
 import dev.simplecore.searchable.core.condition.jackson.NodeDeserializer;
 import dev.simplecore.searchable.core.condition.jackson.SearchConditionDeserializer;
 import dev.simplecore.searchable.core.condition.jackson.SearchConditionJson;
-import dev.simplecore.searchable.core.exception.SearchableException;
 import dev.simplecore.searchable.core.condition.operator.LogicalOperator;
 import dev.simplecore.searchable.core.condition.operator.SearchOperator;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -31,7 +33,11 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 
 /**
  * Core class representing a complete search condition with filtering, sorting, and pagination capabilities.
@@ -91,7 +97,7 @@ public class SearchCondition<D> {
      */
     @ArraySchema(
             arraySchema = @Schema(description = "List of search conditions or condition groups"),
-            schema = @Schema(oneOf = {Condition.class, Group.class})
+            schema = @Schema(implementation = Node.class)
     )
     @JsonProperty("conditions")
     private final List<Node> nodes = new ArrayList<>();
@@ -167,14 +173,7 @@ public class SearchCondition<D> {
      * @throws JsonProcessingException if the JSON is invalid
      */
     public static <T> SearchCondition<T> fromJson(String json, Class<T> dtoClass) throws JsonProcessingException {
-        ObjectMapper mapper = createObjectMapper();
-        JavaType type = mapper.getTypeFactory().constructParametricType(SearchCondition.class, dtoClass);
-        try {
-            return mapper.readValue(json, type);
-        } catch (JsonMappingException exception) {
-            if (exception.getCause() instanceof SearchableException validation) throw validation;
-            throw exception;
-        }
+        return SearchConditionMapper.read(json, dtoClass);
     }
 
     /**
@@ -184,9 +183,8 @@ public class SearchCondition<D> {
      * @throws JsonProcessingException if serialization fails
      */
     public String toJson() throws JsonProcessingException {
-        return createObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(this);
+        return SearchConditionMapper.write(this);
     }
-
 
     /**
      * Enumeration of sort directions with JSON serialization support.
@@ -252,13 +250,14 @@ public class SearchCondition<D> {
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     @JsonDeserialize(using = NodeDeserializer.class)
-    @Schema(description = "Base class for search condition nodes")
+    @Schema(description = "A single search condition or a group of them", oneOf = {Condition.class, Group.class})
     public interface Node {
         LogicalOperator getOperator();
 
         void setOperator(LogicalOperator operator);
 
         // Default implementation for backward compatibility
+        @Schema(hidden = true)
         default List<Node> getNodes() {
             return Collections.emptyList();
         }
@@ -324,6 +323,7 @@ public class SearchCondition<D> {
         @Setter
         @JsonProperty("entityField")
         @JsonInclude(JsonInclude.Include.NON_NULL)
+        @Schema(hidden = true)
         private String entityField;
         /**
          * The logical operator (AND/OR) for combining with other conditions.
@@ -331,6 +331,21 @@ public class SearchCondition<D> {
         @JsonProperty("operator")
         @Setter
         private LogicalOperator operator;
+        /**
+         * Whether text comparisons ignore case; null follows the application-wide setting.
+         * Resolved on the server from the DTO declaration and never read from a request.
+         */
+        @Setter
+        @JsonIgnore
+        private Boolean caseInsensitive;
+        /**
+         * How the condition is matched when its path runs through a collection; null means the
+         * conditions on that collection are matched against one element together.
+         * Resolved on the server from the DTO declaration and never read from a request.
+         */
+        @Setter
+        @JsonIgnore
+        private CollectionMatch match;
 
         /**
          * Default constructor for Jackson deserialization.
@@ -400,7 +415,7 @@ public class SearchCondition<D> {
         @JsonProperty("conditions")
         @ArraySchema(
                 arraySchema = @Schema(description = "List of nested conditions or groups"),
-                schema = @Schema(oneOf = {Condition.class, Group.class})
+                schema = @Schema(implementation = Node.class)
         )
         private final List<Node> nodes;
         
@@ -463,6 +478,7 @@ public class SearchCondition<D> {
 
         @JsonProperty("entityField")
         @JsonInclude(JsonInclude.Include.NON_NULL)
+        @Schema(hidden = true)
         private final String entityField;
 
         @JsonCreator
@@ -475,22 +491,5 @@ public class SearchCondition<D> {
         public boolean isAscending() {
             return Direction.ASC.equals(direction);
         }
-    }
-
-    /**
-     * Creates an ObjectMapper configured for SearchCondition serialization/deserialization.
-     */
-    private static final ObjectMapper JSON_MAPPER = newObjectMapper();
-
-    private static ObjectMapper createObjectMapper() {
-        return JSON_MAPPER;
-    }
-
-    private static ObjectMapper newObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
-        return mapper;
     }
 }

@@ -3,7 +3,6 @@ package dev.simplecore.searchable.core.service;
 import dev.simplecore.searchable.core.annotation.SearchableField;
 import dev.simplecore.searchable.core.condition.SearchCondition;
 import dev.simplecore.searchable.core.condition.SearchConditionBuilder;
-import dev.simplecore.searchable.core.condition.operator.SearchOperator;
 import dev.simplecore.searchable.test.config.BaseTestConfig;
 import dev.simplecore.searchable.test.config.TestConfig;
 import dev.simplecore.searchable.test.entity.TestPost;

@@ -9,7 +9,7 @@ import java.time.ZoneOffset;
  *
  * <p>Defaults to {@link ZoneOffset#UTC} so search results never depend on the JVM
  * default timezone of the deployment host. The Spring Boot starter overrides this at
- * startup with the resolved application timezone (single canonical key — see
+ * startup with the resolved application timezone (single canonical key, see
  * SearchableJpaConfiguration).
  *
  * <p>Timezone-less search values and date-only BETWEEN boundaries are interpreted in this

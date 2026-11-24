@@ -57,10 +57,6 @@ dependencies {
 
         // Hibernate Validator for Jakarta - Spring Boot 3.5.x compatible
         implementation 'org.hibernate.validator:hibernate-validator:8.0.2.Final'
-
-        // OpenAPI/Swagger - Spring Boot 3.5.x compatible version
-        implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui'
-        implementation 'org.springdoc:springdoc-openapi-starter-webmvc-api'
     } else if (project.version.toString().startsWith('0.1.')) {
         // 0.1.x versions: Javax.* API dependencies
         implementation 'javax.persistence:javax.persistence-api:2.2'
@@ -74,11 +70,12 @@ dependencies {
         implementation 'org.springdoc:springdoc-openapi-webmvc-core'
     }
 
-    // Spring Boot starters (will use appropriate versions based on springBootVersion)
+    // Schema annotations on the search condition: read by a documentation generator when one is
+    // present, and absent from the runtime classpath otherwise.
+    compileOnly 'io.swagger.core.v3:swagger-annotations-jakarta'
+
+    // Spring Data JPA and Hibernate, in the versions of the Spring Boot generation this line is built for
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-autoconfigure'
 
     // Both Jackson generations are supported by the public search-condition API.
     api 'com.fasterxml.jackson.core:jackson-databind'
@@ -95,6 +92,7 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testAnnotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-web'
     testImplementation 'com.h2database:h2'
     testImplementation 'com.microsoft.sqlserver:mssql-jdbc'
 }
@@ -125,14 +123,12 @@ test {
     // Always run tests, never consider them up-to-date
     outputs.upToDateWhen { false }
     
-    // Pass system properties to test JVM
-    systemProperties = System.properties
-    
-    // Enable passing specific system properties
-    if (System.getProperty('spring.profiles.active')) {
-        systemProperty 'spring.profiles.active', System.getProperty('spring.profiles.active')
+    // Hand the test JVM the Spring and library settings given on the command line, and none of the
+    // build JVM's own properties.
+    systemProperties System.properties.findAll { key, value ->
+        key.toString().startsWith('spring.') || key.toString().startsWith('searchable.')
     }
-    
+
     // Clean test results before running
     doFirst {
         delete fileTree(dir: "${buildDir}/test-results", include: '**/*')
@@ -152,14 +148,12 @@ tasks.register('performanceTest', Test) {
         includeTags 'performance'
     }
     
-    // Pass system properties to test JVM
-    systemProperties = System.properties
-    
-    // Enable passing specific system properties
-    if (System.getProperty('spring.profiles.active')) {
-        systemProperty 'spring.profiles.active', System.getProperty('spring.profiles.active')
+    // Hand the test JVM the Spring and library settings given on the command line, and none of the
+    // build JVM's own properties.
+    systemProperties System.properties.findAll { key, value ->
+        key.toString().startsWith('spring.') || key.toString().startsWith('searchable.')
     }
-    
+
     // Always run performance tests, never consider them up-to-date
     outputs.upToDateWhen { false }
     

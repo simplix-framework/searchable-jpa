@@ -4,7 +4,9 @@ spring:
     locale-resolver: fixed
   datasource:
     # H2 test database configuration
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL;LOCK_MODE=0
+    # A test that needs a database of its own names it with searchable.test.h2-url. Other profiles
+    # define their own url and never read the property.
+    url: "${searchable.test.h2-url:jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL;LOCK_MODE=0}"
     driver-class-name: org.h2.Driver
     username: sa
     password: 

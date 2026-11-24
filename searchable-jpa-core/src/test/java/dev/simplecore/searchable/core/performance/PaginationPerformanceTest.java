@@ -1,5 +1,8 @@
 package dev.simplecore.searchable.core.performance;
 
+import dev.simplecore.searchable.test.support.StatementBudget;
+import dev.simplecore.searchable.test.support.TestSqlCapture;
+import jakarta.persistence.EntityManager;
 import dev.simplecore.searchable.core.condition.SearchCondition;
 import dev.simplecore.searchable.core.service.DefaultSearchableService;
 import dev.simplecore.searchable.test.config.BaseTestConfig;
@@ -11,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -20,7 +22,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,6 +66,11 @@ class PaginationPerformanceTest {
 
     @Autowired
     private DefaultSearchableService<TestPost, Long> searchableService;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    private final List<Integer> statementsPerPage = new ArrayList<>();
 
     private static final int PAGE_SIZE = 20;
     private static final int WARMUP_ITERATIONS = 3;
@@ -231,11 +237,13 @@ class PaginationPerformanceTest {
             log.warn("  ✖ POOR: Maximum slowdown is {}x", String.format("%.2f", maxRatio));
         }
 
-        // Assertions
+        // Assertions: every position was measured, and reaching a late page sends no more statements
+        // than the first one. The times above are logged only: they depend on the machine.
         for (List<Long> times : performanceResults.values()) {
             assertThat(times).hasSize(TEST_ITERATIONS);
-            assertThat(times.stream().mapToLong(Long::longValue).average().orElse(0.0)).isGreaterThan(0);
         }
+        assertThat(statementsPerPage).isNotEmpty()
+                .allMatch(sent -> sent <= StatementBudget.ofPage(entityManager, TestPost.class, PAGE_SIZE));
         
         log.info("SUMMARY: Multi-position pagination performance test completed successfully");
         log.info("  - Total positions tested: {}", testPages.length);
@@ -252,6 +260,12 @@ class PaginationPerformanceTest {
         sort.addOrder(new SearchCondition.Order("postId", SearchCondition.Direction.ASC));
         condition.setSort(sort);
         
-        return searchableService.findAllWithSearch(condition);
+        TestSqlCapture.start();
+        try {
+            return searchableService.findAllWithSearch(condition);
+        } finally {
+            TestSqlCapture.stop();
+            statementsPerPage.add(TestSqlCapture.captured().size());
+        }
     }
 } 

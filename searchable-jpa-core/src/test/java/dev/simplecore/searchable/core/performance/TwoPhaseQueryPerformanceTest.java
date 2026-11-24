@@ -9,6 +9,9 @@ import dev.simplecore.searchable.test.entity.TestPost;
 import dev.simplecore.searchable.test.enums.TestPostStatus;
 import dev.simplecore.searchable.test.fixture.TestDataManager;
 import dev.simplecore.searchable.test.service.TestPostService;
+import dev.simplecore.searchable.test.support.StatementBudget;
+import dev.simplecore.searchable.test.support.TestSqlCapture;
+import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +49,28 @@ class TwoPhaseQueryPerformanceTest {
 
     @Autowired
     private TestDataManager testDataManager;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    /**
+     * Runs the search and checks the number of statements it sent against the budget of its page.
+     * The time it took is logged by the callers and is not asserted: it depends on the machine.
+     */
+    private Page<TestPost> searchWithinStatementBudget(SearchCondition<?> condition) {
+        int budget = StatementBudget.ofPage(entityManager, TestPost.class, condition.getSize());
+        TestSqlCapture.start();
+        Page<TestPost> result;
+        try {
+            result = testPostService.findAllWithSearch(condition);
+        } finally {
+            TestSqlCapture.stop();
+        }
+        int sent = TestSqlCapture.captured().size();
+        assertTrue(sent <= budget, "The search sent " + sent + " statements, more than its budget of " + budget
+                + ": " + TestSqlCapture.captured());
+        return result;
+    }
 
     @BeforeAll
     static void setUp(@Autowired TestDataManager testDataManager, @Autowired JdbcTemplate jdbc) {
@@ -86,7 +111,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING REGULAR QUERY");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -101,12 +126,9 @@ class TwoPhaseQueryPerformanceTest {
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
         
-        // Performance assertion (should complete within reasonable time)
-        assertTrue(duration < 3000, "Regular query should complete within 3 seconds, but took " + duration + " ms");
-        
         log.info("SUMMARY: Regular query performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
-        log.info("  ✔ Performance within acceptable limits");
+        log.info("  ✔ Statement count within its budget");
     }
 
     @Test
@@ -128,7 +150,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING MANYTOMANY QUERY");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -143,12 +165,9 @@ class TwoPhaseQueryPerformanceTest {
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
         
-        // Performance assertion (should complete within reasonable time)
-        assertTrue(duration < 5000, "ManyToMany query should complete within 5 seconds, but took " + duration + " ms");
-        
         log.info("SUMMARY: ManyToMany query performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
-        log.info("  ✔ Performance within acceptable limits");
+        log.info("  ✔ Statement count within its budget");
     }
 
     @Test
@@ -177,7 +196,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING COMPLEX MULTI-RELATIONSHIP QUERY");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -192,12 +211,9 @@ class TwoPhaseQueryPerformanceTest {
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
         
-        // Performance assertion (should complete within reasonable time)
-        assertTrue(duration < 8000, "Complex query should complete within 8 seconds, but took " + duration + " ms");
-        
         log.info("SUMMARY: Complex multi-relationship query performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
-        log.info("  ✔ Performance within acceptable limits");
+        log.info("  ✔ Statement count within its budget");
     }
 
     @Test
@@ -220,7 +236,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING LARGE PAGE SIZE QUERY");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -236,12 +252,9 @@ class TwoPhaseQueryPerformanceTest {
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
         
-        // Performance assertion (should complete within reasonable time)
-        assertTrue(duration < 10000, "Large page query should complete within 10 seconds, but took " + duration + " ms");
-        
         log.info("SUMMARY: Large page size performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
-        log.info("  ✔ Performance within acceptable limits");
+        log.info("  ✔ Statement count within its budget");
     }
 
     @Test
@@ -264,7 +277,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING DEEP PAGINATION QUERY");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -280,12 +293,9 @@ class TwoPhaseQueryPerformanceTest {
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
         
-        // Performance assertion (should complete within reasonable time)
-        assertTrue(duration < 6000, "Deep pagination query should complete within 6 seconds, but took " + duration + " ms");
-        
         log.info("SUMMARY: Deep pagination performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
-        log.info("  ✔ Performance within acceptable limits");
+        log.info("  ✔ Statement count within its budget");
     }
 
     @Test
@@ -311,7 +321,7 @@ class TwoPhaseQueryPerformanceTest {
                 .build();
 
         log.info("STEP 2: EXECUTING IN CLAUSE BATCHING SIMULATION");
-        Page<TestPost> result = testPostService.findAllWithSearch(condition);
+        Page<TestPost> result = searchWithinStatementBudget(condition);
         
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
@@ -326,9 +336,6 @@ class TwoPhaseQueryPerformanceTest {
         // Verify results
         assertNotNull(result);
         assertTrue(result.getTotalElements() > 0, "Performance scenario must match seeded data");
-        
-        // Performance assertion (should complete within reasonable time even with potential batching)
-        assertTrue(duration < 15000, "IN clause batching query should complete within 15 seconds, but took " + duration + " ms");
         
         log.info("SUMMARY: IN clause batching simulation performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");
@@ -363,7 +370,7 @@ class TwoPhaseQueryPerformanceTest {
         for (int i = 0; i < iterations; i++) {
             long startTime = System.currentTimeMillis();
             
-            Page<TestPost> result = testPostService.findAllWithSearch(condition);
+            Page<TestPost> result = searchWithinStatementBudget(condition);
             
             long endTime = System.currentTimeMillis();
             long duration = endTime - startTime;
@@ -388,9 +395,6 @@ class TwoPhaseQueryPerformanceTest {
         log.info("  - Total iterations: {}", iterations);
         log.info("  - Total elements: {}", lastResult.getTotalElements());
         log.info("  - Results consistency: ✔ VERIFIED");
-        
-        // Performance assertion (average should be reasonable)
-        assertTrue(averageDuration < 3000, "Average query time should be under 3 seconds, but was " + averageDuration + " ms");
         
         log.info("SUMMARY: Query consistency verification performance test - PASSED");
         log.info("  ✔ Two-phase query execution verified");

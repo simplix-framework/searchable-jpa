@@ -1,150 +1,97 @@
 package dev.simplecore.searchable.openapi.customiser;
 
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.openapi.annotation.SearchableParams;
+import dev.simplecore.searchable.core.annotation.SearchableParams;
 import dev.simplecore.searchable.openapi.generator.DescriptionGenerator;
 import dev.simplecore.searchable.openapi.generator.ExampleGenerator;
 import dev.simplecore.searchable.openapi.generator.ParameterGenerator;
-import io.swagger.v3.core.converter.AnnotatedType;
-import io.swagger.v3.core.converter.ModelConverters;
+import dev.simplecore.searchable.openapi.utils.SearchParameterSupport;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.examples.Example;
-import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
-import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.RequestBody;
-import java.lang.reflect.Field;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
-import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.Set;
 import org.springdoc.core.customizers.OperationCustomizer;
+import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.MethodParameter;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.method.HandlerMethod;
 
+/**
+ * Documents a search endpoint from its search DTO.
+ *
+ * <p>A parameter annotated with {@link SearchableParams} is a search sent as query parameters: the
+ * operation gets one parameter per field and operator, and the parameter that only carries the raw
+ * values is taken out of the document. A {@code SearchCondition} request body gets an example.
+ */
 public class OpenApiDocCustomiser implements OperationCustomizer {
-    private static final Logger log = LoggerFactory.getLogger(OpenApiDocCustomiser.class);
     private static final String MEDIA_TYPE_JSON = "application/json";
+    private static final String EXAMPLE_NAME = "example";
 
-    private final ExampleGenerator exampleGenerator;
-    private final ParameterGenerator parameterGenerator;
-
-    public OpenApiDocCustomiser() {
-        this.exampleGenerator = new ExampleGenerator();
-        this.parameterGenerator = new ParameterGenerator();
-    }
+    private final ExampleGenerator exampleGenerator = new ExampleGenerator();
+    private final ParameterGenerator parameterGenerator = new ParameterGenerator();
 
     @Override
     public Operation customize(Operation operation, HandlerMethod handlerMethod) {
-        log.trace("Customizing OpenAPI operation for search conditions");
-
-        try {
-            Arrays.stream(handlerMethod.getMethodParameters())
-                    .filter(this::isSearchConditionParameter)
-                    .findFirst()
-                    .ifPresent(param -> customizeForParam(param, operation));
-        } catch (Exception e) {
-            log.error("Error customizing OpenAPI operation for method: {}", handlerMethod.getMethod().getName(), e);
+        for (MethodParameter parameter : handlerMethod.getMethodParameters()) {
+            Class<?> dtoClass = SearchParameterSupport.searchDto(parameter);
+            if (dtoClass == null) {
+                continue;
+            }
+            DescriptionGenerator.customizeOperation(operation, dtoClass);
+            if (SearchParameterSupport.isQueryParameterSearch(parameter)) {
+                removeCarrierParameter(operation, parameter);
+                parameterGenerator.customizeParameters(operation, dtoClass);
+            } else {
+                customizeRequestBody(operation, dtoClass);
+            }
+            break;
         }
-
         return operation;
     }
 
-    private boolean isSearchConditionParameter(MethodParameter param) {
-        Class<?> parameterType = param.getParameterType();
-        return SearchCondition.class.isAssignableFrom(parameterType) ||
-                param.hasParameterAnnotation(SearchableParams.class);
-    }
-
-    private void customizeForParam(MethodParameter param, Operation operation) {
-        Class<?> dtoClass = extractDtoClass(param);
-        if (dtoClass == null) return;
-
-        boolean isPostType = SearchCondition.class.isAssignableFrom(param.getParameterType());
-
-        DescriptionGenerator.customizeOperation(operation, dtoClass);
-
-        if (isPostType) {
-            customizeRequestBody(operation, dtoClass);
-        } else {
-            parameterGenerator.customizeParameters(operation, dtoClass);
+    /**
+     * Takes the parameter that only carries the raw query values out of the document. SpringDoc
+     * lists it as one object-typed query parameter, which is not something a client can send.
+     */
+    private static void removeCarrierParameter(Operation operation, MethodParameter parameter) {
+        if (operation.getParameters() == null) {
+            return;
         }
-    }
-
-    private Class<?> extractDtoClass(MethodParameter param) {
-        if (param.hasParameterAnnotation(SearchableParams.class)) {
-            SearchableParams annotation = param.getParameterAnnotation(SearchableParams.class);
-            return annotation != null ? annotation.value() : null;
+        Set<String> names = new HashSet<>();
+        parameter.initParameterNameDiscovery(new DefaultParameterNameDiscoverer());
+        if (parameter.getParameterName() != null) {
+            names.add(parameter.getParameterName());
         }
-        return (Class<?>) ((ParameterizedType) param.getGenericParameterType()).getActualTypeArguments()[0];
+        RequestParam requestParam = parameter.getParameterAnnotation(RequestParam.class);
+        if (requestParam != null && StringUtils.hasText(requestParam.name())) {
+            names.add(requestParam.name());
+        }
+        operation.getParameters().removeIf(documented -> names.contains(documented.getName()));
     }
 
+    /**
+     * Adds an example to the JSON request body SpringDoc documented. The schema stays the one
+     * SpringDoc resolved, whose components it registered in the same document.
+     */
     private void customizeRequestBody(Operation operation, Class<?> dtoClass) {
-        try {
-            RequestBody requestBody = new RequestBody();
-            Content content = new Content();
-            MediaType mediaType = new MediaType();
-
-            registerEnumsFromDto(dtoClass);
-
-            Type parameterizedType = new ParameterizedType() {
-                @Override
-                public Type[] getActualTypeArguments() {
-                    return new Type[]{dtoClass};
-                }
-
-                @Override
-                public Type getRawType() {
-                    return SearchCondition.class;
-                }
-
-                @Override
-                public Type getOwnerType() {
-                    return null;
-                }
-            };
-
-            Schema<?> schema = ModelConverters.getInstance().resolveAsResolvedSchema(
-                    new AnnotatedType(parameterizedType)
-                            .resolveAsRef(false)
-                            .skipSchemaName(true)
-            ).schema;
-
-            Map<String, Example> examples = new LinkedHashMap<>();
-            Example example = new Example();
-            example.setValue(exampleGenerator.generateSimpleExample(dtoClass));
-            example.setSummary("Example");
-            examples.put("example", example);
-
-            mediaType.schema(schema);
-            mediaType.examples(examples);
-            content.addMediaType(MEDIA_TYPE_JSON, mediaType);
-            requestBody.content(content);
-            requestBody.required(true);
-            operation.requestBody(requestBody);
-        } catch (Exception e) {
-            log.error("Failed to customize request body", e);
+        RequestBody requestBody = operation.getRequestBody();
+        if (requestBody == null || requestBody.getContent() == null) {
+            return;
         }
-    }
-
-    private void registerEnumsFromDto(Class<?> dtoClass) {
-        ModelConverters modelConverters = ModelConverters.getInstance();
-
-        for (Field field : dtoClass.getDeclaredFields()) {
-            Class<?> fieldType = field.getType();
-            if (fieldType.isEnum()) {
-                try {
-                    modelConverters.resolveAsResolvedSchema(
-                        new AnnotatedType(fieldType).resolveAsRef(true)
-                    );
-                    log.trace("Registered enum schema: {}", fieldType.getSimpleName());
-                } catch (Exception e) {
-                    log.warn("Failed to register enum schema: {}", fieldType.getSimpleName(), e);
-                }
-            }
+        MediaType mediaType = requestBody.getContent().get(MEDIA_TYPE_JSON);
+        if (mediaType == null) {
+            return;
         }
+        Example example = new Example();
+        example.setValue(exampleGenerator.generateExampleObject(dtoClass));
+        example.setSummary("Example");
+        Map<String, Example> examples = new LinkedHashMap<>();
+        examples.put(EXAMPLE_NAME, example);
+        mediaType.examples(examples);
+        requestBody.required(true);
     }
 }

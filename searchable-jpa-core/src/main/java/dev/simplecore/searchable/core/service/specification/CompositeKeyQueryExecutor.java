@@ -1,11 +1,9 @@
 package dev.simplecore.searchable.core.service.specification;
 
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import dev.simplecore.searchable.core.exception.SearchableOperationException;
-import dev.simplecore.searchable.core.i18n.MessageUtils;
+import dev.simplecore.searchable.core.service.join.EntityPaths;
+import dev.simplecore.searchable.core.utils.EntityKey;
 import dev.simplecore.searchable.core.utils.SearchableFieldUtils;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceUnitUtil;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
@@ -15,14 +13,12 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Selection;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -30,205 +26,138 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /**
  * Handles two-phase pagination for composite-key entities ({@code @IdClass} and {@code @EmbeddedId}).
- * <p>
- * The {@code @EmbeddedId} attribute name is resolved from the JPA metamodel (never assumed to be
- * {@code "id"}), Phase 1 uses {@code GROUP BY} with deterministic aggregates so sorting through a
- * to-many relationship cannot duplicate or drop keys across pages, and the distinct total count is
- * computed with a portable concatenated-key expression.
+ *
+ * <p>The key's attributes come from the JPA metamodel, so neither the name of an
+ * {@code @EmbeddedId} attribute nor the names of its parts are assumed. A key travels between the
+ * phases as the list of its parts' values, in the order of {@link EntityKey#components()}.
  */
-@Slf4j
 class CompositeKeyQueryExecutor<T> {
 
-    private final SearchCondition<?> condition;
+    private final SearchFilter<T> filter;
     private final EntityManager entityManager;
     private final Class<T> entityClass;
     private final JpaSpecificationExecutor<T> specificationExecutor;
-    private final JoinStrategyManager<T> joinStrategyManager;
+    private final EntityKey key;
 
-    private final List<String> idFields;
-    private final boolean embeddedId;
-    private final String embeddedIdAttribute;
-
-    CompositeKeyQueryExecutor(SearchCondition<?> condition,
+    CompositeKeyQueryExecutor(SearchFilter<T> filter,
                               EntityManager entityManager,
                               Class<T> entityClass,
-                              JpaSpecificationExecutor<T> specificationExecutor,
-                              JoinStrategyManager<T> joinStrategyManager) {
-        this.condition = condition;
+                              JpaSpecificationExecutor<T> specificationExecutor) {
+        this.filter = filter;
         this.entityManager = entityManager;
         this.entityClass = entityClass;
         this.specificationExecutor = specificationExecutor;
-        this.joinStrategyManager = joinStrategyManager;
-        this.idFields = SearchableFieldUtils.getCompositeKeyFieldNames(entityManager, entityClass);
-        this.embeddedId = SearchableFieldUtils.isEmbeddedIdEntity(entityManager, entityClass);
-        this.embeddedIdAttribute = embeddedId
-                ? SearchableFieldUtils.getEmbeddedIdAttributeName(entityManager, entityClass)
-                : null;
+        this.key = SearchableFieldUtils.entityKey(entityManager, entityClass);
     }
 
-    boolean hasIdFields() {
-        return !idFields.isEmpty();
+    /** @return how many columns one key binds in a statement */
+    int keyColumns() {
+        return key.components().size();
     }
 
-    /**
-     * Resolves the Criteria path for a single composite-id field, honoring the actual
-     * {@code @EmbeddedId} attribute name for embedded keys.
-     */
-    private Path<?> idFieldPath(Root<T> root, String field) {
-        return embeddedId ? root.get(embeddedIdAttribute).get(field) : root.get(field);
+    private Path<?> keyPath(Root<T> root, String component) {
+        return key.embedded() ? root.get(key.attribute()).get(component) : root.get(component);
     }
 
     /**
-     * Phase 1: fetch the distinct composite keys for the requested page, ordered deterministically.
+     * Phase 1: the keys of the requested page. A sort through a collection joins it, and the rows
+     * are then grouped back to one per key with a deterministic aggregate of each sort value.
      */
-    List<Object> executePhaseOne(PageRequest pageRequest, Set<String> joinPaths) {
+    List<Object> executePhaseOne(PageRequest pageRequest) {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<Object[]> query = cb.createQuery(Object[].class);
         Root<T> root = query.from(entityClass);
-        joinStrategyManager.applyRegularJoinsOnly(root, joinPaths);
+
+        List<Sort.Order> sortOrders = pageRequest.getSort().stream()
+                .filter(order -> !SearchableFieldUtils.COMPOSITE_KEY_MARKER.equals(order.getProperty()))
+                .collect(Collectors.toList());
+        boolean sortThroughCollection = sortOrders.stream()
+                .anyMatch(order -> EntityPaths.traversesCollection(entityManager, entityClass, order.getProperty()));
 
         List<Selection<?>> selections = new ArrayList<>();
-        List<Expression<?>> groupBy = new ArrayList<>();
-        for (String idField : idFields) {
-            Path<?> path = idFieldPath(root, idField);
+        List<Expression<?>> keyPaths = new ArrayList<>();
+        for (String component : key.components()) {
+            Path<?> path = keyPath(root, component);
             selections.add(path);
-            groupBy.add(path);
+            keyPaths.add(path);
         }
 
         List<Order> orders = new ArrayList<>();
-        Set<String> sortedIdFields = new LinkedHashSet<>();
-        for (Sort.Order sortOrder : pageRequest.getSort()) {
+        Set<String> sortedComponents = new LinkedHashSet<>();
+        for (Sort.Order sortOrder : sortOrders) {
             String property = sortOrder.getProperty();
-            if (SearchableFieldUtils.COMPOSITE_KEY_MARKER.equals(property)) {
-                continue;
-            }
-            if (idFields.contains(property)) {
-                Path<?> path = idFieldPath(root, property);
-                orders.add(sortOrder.isAscending() ? cb.asc(path) : cb.desc(path));
-                sortedIdFields.add(property);
+            Expression<?> sortValue;
+            int keyPart = key.paths().indexOf(property);
+            if (keyPart >= 0) {
+                String component = key.components().get(keyPart);
+                sortValue = keyPath(root, component);
+                sortedComponents.add(component);
             } else {
                 Path<?> sortPath = SpecificationQuerySupport.getPath(root, property);
-                Expression<?> aggregate = SpecificationQuerySupport.aggregateForSort(cb, sortPath, sortOrder.isAscending());
-                selections.add(aggregate);
-                orders.add(sortOrder.isAscending() ? cb.asc(aggregate) : cb.desc(aggregate));
+                sortValue = sortThroughCollection
+                        ? SpecificationQuerySupport.aggregateForSort(cb, sortPath, sortOrder.isAscending())
+                        : sortPath;
+                if (sortThroughCollection) {
+                    // A database orders a grouped result only by what it selects.
+                    selections.add(sortValue);
+                }
             }
+            orders.add(sortOrder.isAscending() ? cb.asc(sortValue) : cb.desc(sortValue));
         }
-        // Deterministic tiebreaker: order by every id field not already ordered.
-        for (String idField : idFields) {
-            if (!sortedIdFields.contains(idField)) {
-                orders.add(cb.asc(idFieldPath(root, idField)));
+        // Deterministic tiebreaker: every part of the key not already ordered.
+        for (String component : key.components()) {
+            if (!sortedComponents.contains(component)) {
+                orders.add(cb.asc(keyPath(root, component)));
             }
         }
 
         query.multiselect(selections);
-        Predicate predicate = SpecificationQuerySupport.createPredicates(condition, entityManager, root, query, cb);
-        if (predicate != null) {
-            query.where(predicate);
+        Predicate matching = sortThroughCollection
+                ? filter.matchingJoined(root, query, cb)
+                : filter.matching(root, query, cb);
+        if (matching != null) {
+            query.where(matching);
         }
-        query.groupBy(groupBy);
+        if (sortThroughCollection) {
+            query.groupBy(keyPaths);
+        }
         query.orderBy(orders);
 
         TypedQuery<Object[]> typedQuery = entityManager.createQuery(query);
         typedQuery.setFirstResult(Math.toIntExact(pageRequest.getOffset()));
         typedQuery.setMaxResults(pageRequest.getPageSize());
 
+        int parts = key.components().size();
         return typedQuery.getResultList().stream()
-                .map(this::toKey)
+                .map(row -> (Object) List.copyOf(Arrays.asList(row).subList(0, parts)))
                 .collect(Collectors.toList());
     }
 
-    private Object toKey(Object[] row) {
-        if (idFields.size() == 1) {
-            return row[0];
-        }
-        Object[] compositeKey = new Object[idFields.size()];
-        System.arraycopy(row, 0, compositeKey, 0, idFields.size());
-        return compositeKey;
-    }
-
     /**
-     * Phase 2: load the full entities for the given composite keys, applying fetch joins and
-     * {@code distinct} to avoid emitting duplicate root rows from to-many fetches. Ordering is
-     * restored by the caller from the Phase 1 key order, so no {@code ORDER BY} is applied here.
+     * Phase 2: the entities of the given keys with their fetch joins. Ordering is restored by the
+     * caller from the Phase 1 key order, so no {@code ORDER BY} is applied here.
      */
-    List<T> executePhaseTwo(List<Object> ids, Set<String> fetchFields) {
+    List<T> executePhaseTwo(List<Object> keys, Set<String> fetchFields) {
         Specification<T> spec = (root, query, cb) -> {
-            query.distinct(true);
             SpecificationQuerySupport.applyFetchJoins(root, query, fetchFields);
-
-            List<Predicate> orPredicates = new ArrayList<>();
-            for (Object id : ids) {
-                if (id instanceof Object[]) {
-                    Object[] compositeKey = (Object[]) id;
-                    if (compositeKey.length == idFields.size()) {
-                        List<Predicate> andPredicates = new ArrayList<>();
-                        for (int i = 0; i < idFields.size(); i++) {
-                            andPredicates.add(cb.equal(idFieldPath(root, idFields.get(i)), compositeKey[i]));
-                        }
-                        orPredicates.add(cb.and(andPredicates.toArray(new Predicate[0])));
-                    } else {
-                        log.warn("Composite key length mismatch: expected {}, got {}", idFields.size(), compositeKey.length);
-                    }
-                } else if (idFields.size() == 1) {
-                    orPredicates.add(cb.equal(idFieldPath(root, idFields.get(0)), id));
-                } else {
-                    log.warn("Expected composite key array but got single value: {}", id);
+            List<Predicate> anyKey = new ArrayList<>(keys.size());
+            for (Object each : keys) {
+                List<?> values = (List<?>) each;
+                Predicate[] parts = new Predicate[values.size()];
+                for (int i = 0; i < parts.length; i++) {
+                    parts[i] = cb.equal(keyPath(root, key.components().get(i)), values.get(i));
                 }
+                anyKey.add(cb.and(parts));
             }
-
-            return orPredicates.isEmpty() ? cb.disjunction() : cb.or(orPredicates.toArray(new Predicate[0]));
+            return cb.or(anyKey.toArray(new Predicate[0]));
         };
-
         return specificationExecutor.findAll(spec, Sort.unsorted());
     }
 
     /**
-     * Extracts the composite key of a managed entity in the same representation produced by
-     * {@link #executePhaseOne} (a single value or an {@code Object[]}), so results can be reordered.
+     * @return the key of a loaded entity in the representation {@link #executePhaseOne} produces
      */
     Object extractId(T entity) {
-        if (idFields.size() == 1) {
-            return extractField(entity, idFields.get(0));
-        }
-        Object[] compositeKey = new Object[idFields.size()];
-        for (int i = 0; i < idFields.size(); i++) {
-            compositeKey[i] = extractField(entity, idFields.get(i));
-        }
-        return compositeKey;
-    }
-
-    private Object extractField(T entity, String fieldName) {
-        if (embeddedId) {
-            PersistenceUnitUtil unitUtil = entityManager.getEntityManagerFactory().getPersistenceUnitUtil();
-            Object embedded = unitUtil.getIdentifier(entity);
-            if (embedded == null) {
-                throw new SearchableOperationException(
-                        MessageUtils.getMessage("executor.embedded.id.null", new Object[]{entityClass.getSimpleName()}));
-            }
-            return readProperty(embedded, fieldName);
-        }
-        return readProperty(entity, fieldName);
-    }
-
-    private Object readProperty(Object target, String fieldName) {
-        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-        try {
-            Method getter = target.getClass().getMethod(getterName);
-            return getter.invoke(target);
-        } catch (NoSuchMethodException e) {
-            try {
-                Field field = target.getClass().getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field.get(target);
-            } catch (ReflectiveOperationException ex) {
-                throw new SearchableOperationException(
-                        MessageUtils.getMessage("executor.composite.key.not.found",
-                                new Object[]{entityClass.getSimpleName()}), ex);
-            }
-        } catch (ReflectiveOperationException e) {
-            throw new SearchableOperationException(
-                    MessageUtils.getMessage("executor.composite.key.not.found",
-                            new Object[]{entityClass.getSimpleName()}), e);
-        }
+        return key.values(entityManager, entityClass, entity);
     }
 }

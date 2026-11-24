@@ -1,6 +1,10 @@
 package dev.simplecore.searchable.core.condition;
 
-import dev.simplecore.searchable.core.condition.builder.*;
+import dev.simplecore.searchable.core.condition.builder.ChainedSearchCondition;
+import dev.simplecore.searchable.core.condition.builder.ChainedSearchConditionImpl;
+import dev.simplecore.searchable.core.condition.builder.ConditionGroupBuilder;
+import dev.simplecore.searchable.core.condition.builder.FirstCondition;
+import dev.simplecore.searchable.core.condition.builder.SortBuilder;
 import dev.simplecore.searchable.core.condition.operator.LogicalOperator;
 import dev.simplecore.searchable.core.condition.validator.SearchConditionValidator;
 import dev.simplecore.searchable.core.condition.validator.SearchRequestLimits;
@@ -339,13 +343,16 @@ public class SearchConditionBuilder<D> {
     private static SearchCondition.Node deepCopyNode(SearchCondition.Node node) {
         if (node instanceof SearchCondition.Condition) {
             SearchCondition.Condition source = (SearchCondition.Condition) node;
-            return new SearchCondition.Condition(
+            SearchCondition.Condition copy = new SearchCondition.Condition(
                     source.getOperator(),
                     source.getField(),
                     source.getSearchOperator(),
                     source.getValue(),
                     source.getValue2(),
                     source.getEntityField());
+            copy.setCaseInsensitive(source.getCaseInsensitive());
+            copy.setMatch(source.getMatch());
+            return copy;
         }
         if (node instanceof SearchCondition.Group) {
             SearchCondition.Group source = (SearchCondition.Group) node;
