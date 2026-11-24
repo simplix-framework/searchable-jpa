@@ -1,53 +1,67 @@
 # 문제 해결
 
-## 의존성·시작 오류
+증상별로 확인할 항목입니다. 각 항목의 배경은 연결한 안내 페이지에 있습니다.
 
-Boot 4에는 2.x, Boot 3에는 1.x를 사용하세요. Searchable JPA의 세 모듈은 같은 버전으로 맞추세요. `./gradlew dependencyInsight --dependency hibernate-core --configuration runtimeClasspath`로 예상하지 않은 버전 재정의를 확인할 수 있습니다. 한 프레임워크 계열에서 빌드에 성공해도 다른 주 버전과의 호환성이 보장되지는 않습니다.
+## 의존성과 시작 오류
 
-GitHub Packages 인증 오류가 발생하면 저장소 URL, 사용자명, 토큰 범위와 패키지 접근 권한을 확인하세요. Maven Local을 사용하려면 `./gradlew publishToMavenLocal`로 세 모듈을 모두 배포하고, 사용하는 프로젝트에 `mavenLocal()`과 정확한 버전을 지정하세요.
+| 증상 | 확인할 항목 |
+| --- | --- |
+| 클래스를 찾지 못하거나 시작 중 오류 발생 | Boot 4에는 2.x, Boot 3에는 1.x를 사용하고 모든 모듈의 버전을 맞추세요. `./gradlew dependencyInsight --dependency hibernate-core --configuration runtimeClasspath`로 버전이 바뀌지 않았는지 확인하세요 |
+| GitHub Packages 인증 실패 | 저장소 URL, 사용자명, 토큰의 패키지 읽기 권한을 확인하세요 |
+| 로컬 설치한 버전을 찾지 못함 | `./gradlew publishToMavenLocal`로 모든 모듈을 설치하고 `mavenLocal()`을 추가했는지 확인하세요 |
+| 자동 설정이 적용되지 않음 | starter가 런타임 클래스패스에 있는지, `SearchableJpaConfiguration`을 제외하지 않았는지 확인하세요. `debug=true`로 조건 평가 보고서를 볼 수 있습니다 |
+| 서비스 생성 중 오류 | Repository가 `JpaRepository`와 `JpaSpecificationExecutor`를 모두 상속하는지 확인하세요 |
+| 방언 클래스 오류로 시작 실패 | 방언을 직접 지정하지 말고 Hibernate가 JDBC 메타데이터에서 판별하게 하세요. 이전 Hibernate 버전의 방언 클래스명은 동작하지 않습니다 |
+| 시간대 ID 오류로 시작 중단 | `searchable.date-time.default-timezone`과 `spring.jackson.time-zone`의 값을 확인하세요 |
 
-자동 설정이 적용되지 않으면 실행 클래스패스에 starter가 있는지, JPA 구성이 있는지, `SearchableJpaConfiguration`을 제외하지 않았는지 확인하세요. `debug=true`로 Spring Boot 조건 평가 보고서를 볼 수 있습니다. `searchable.hibernate.auto-optimization=false`는 Hibernate 기본 설정을 비활성화하며 검색 서비스 API는 계속 사용할 수 있습니다.
+## 요청이 거부됨
 
-서비스에 전달하는 저장소는 `JpaRepository`와 `JpaSpecificationExecutor`를 모두 구현해야 합니다. 엔티티와 저장소는 일반적인 Spring Data JPA 애플리케이션과 같이 구성하세요. 별도 설정이 필요하지 않다면 JDBC 메타데이터로 데이터베이스 방언을 자동 감지하도록 두세요. 이전 Hibernate 버전의 방언 클래스명을 지정하면 시작에 실패할 수 있습니다.
+| 증상 | 확인할 항목 |
+| --- | --- |
+| 필드를 찾을 수 없음 | 파라미터 이름이 DTO 필드명인지, 필드에 `@SearchableField`가 있는지 확인하세요. [검색 필드 선언](./search-fields.md) |
+| 연산자를 사용할 수 없음 | `operators`에 연산자가 있는지, 이름이 `greaterThanOrEqualTo`처럼 정확한지 확인하세요. [연산자와 값](./search-operators.md) |
+| 정렬이 거부됨 | `sortable = true`인지, 형식이 `sort=createdAt.desc`인지 확인하세요 |
+| 날짜 값이 거부됨 | 형식과 달력에 있는 날짜인지 확인하세요. `LocalDateTime` 필드에는 시간까지 보내세요 |
+| `between`이 거부됨 | 순서가 맞는 값 두 개가 필요합니다 |
+| 알 수 없는 파라미터로 거부됨 | 자체 파라미터를 제거한 뒤 파서를 호출하거나 `searchable.params.ignore-unknown`을 사용하세요. [요청 작성](./request-formats.md) |
+| 페이지 크기나 조건 수 초과 | [서버 범위와 제한](./server-scope-and-limits.md)의 한도를 확인하세요 |
+| 잘못된 요청에 500으로 응답 | `searchable.web.problem-details.enabled`를 켜거나 예외 처리기를 작성하세요. [오류와 메시지](./errors-and-messages.md) |
 
-## 검색 입력 거부
+## AND와 OR의 결과가 예상과 다름
 
-DTO 속성명, `entityField` 매핑, 허용 연산자와 `sortable=true` 설정을 확인하세요. 상속한 필드도 검색 대상입니다. 어노테이션의 연산자 배열이 비어 있으면 모든 연산자를 허용합니다.
+조건은 선언한 순서대로 왼쪽부터 결합합니다. `A, or B, and C`는 `(A OR B) AND C`입니다. `A OR (B AND C)`가 필요하면 B와 C를 그룹으로 묶으세요. 그룹의 연결 방식은 항목이 하나뿐인 그룹에도 적용합니다. [요청 작성](./request-formats.md)의 그림을 참고하세요.
 
-쿼리 파라미터에는 `greaterThanOrEqualTo` 같은 전송용 연산자명을 사용하세요. 정렬은 `sort=createdAt.desc`로 작성하세요. `sort=createdAt,desc`는 올바른 형식이 아닙니다. 날짜만 있는 값은 `LocalDate`에 사용하며 `LocalDateTime`에는 날짜와 시간이 필요합니다. 하루 전체의 타임스탬프 검색에는 해당 날짜 시작 이상, 다음 날짜 시작 미만 조건을 사용할 수 있습니다.
+## 조회가 느리거나 SQL이 많음
 
-`BETWEEN`에는 null이 아닌 순서가 맞는 값 두 개가 필요합니다. `IN`·`NOT_IN`에는 null이 아닌 값 1–1,000개를 지정합니다. 문자열 패턴 검색은 빈 값을 거부하며 `%`와 `_`를 문자 그대로 처리합니다. 정확한 형식은 [검색 연산자](./search-operators.md)를 확인하세요.
+| 증상 | 확인할 항목 |
+| --- | --- |
+| 한 요청에 SQL이 여러 번 실행됨 | 정렬이나 fetch가 컬렉션을 거치면 키 조회와 엔티티 조회로 나누어 실행합니다. 컬렉션마다 조회가 추가됩니다. [조회 전략과 성능](./two-phase-query-optimization.md) |
+| 필요 없는 컬렉션을 조회함 | `searchable.hibernate.auto-fetch-collections=false`로 설정하고 필요한 경로만 `fetchFields`로 지정하세요 |
+| 뒤쪽 페이지가 느림 | keyset 스크롤을 사용하세요. [조회 방법](./reading-results.md) |
+| `contains` 검색이 느림 | 앞부분이 정해지지 않은 패턴은 일반 인덱스를 사용하지 못합니다 |
+| 건수 조회가 실행되지 않음 | 조회한 행이 페이지 크기보다 적으면 건수를 계산으로 구합니다 |
 
-검색 조건은 노드 1,000개, 중첩 32단계, 정렬 필드 16개까지 허용합니다. 페이지 크기 기본값은 20이며 별도 설정이 없으면 최대 1,000입니다. 페이지 번호와 크기의 곱이 JPA의 정수 오프셋 범위를 넘으면 거부합니다. HTTP 메시지 변환기는 잘못된 JSON과 제한을 초과한 검색 본문을 거부합니다. Java API를 직접 호출하면 라이브러리 검증·파싱 예외가 발생합니다. 애플리케이션 예외 응답은 컨트롤러 어드바이스에서 정의하세요.
+실행한 SQL은 `org.hibernate.SQL=DEBUG`, 바인딩 값은 `org.hibernate.orm.jdbc.bind=TRACE`로 확인합니다.
 
-## 예상과 다른 AND·OR 결과
+## 복합키, 프로젝션, 수정
 
-노드는 추가한 순서대로 각 노드의 연결 연산자를 적용합니다. `A.or(B).and(C)`는 `(A OR B) AND C`입니다. `A OR (B AND C)`가 필요하면 명시적인 중첩 그룹을 사용하세요. 자식이 하나인 그룹도 외부 연결 연산자를 유지합니다. 첫 노드에는 앞선 피연산자가 없습니다. [고급 기능](./advanced-features.md)에 예제가 있습니다.
+| 증상 | 확인할 항목 |
+| --- | --- |
+| `@EmbeddedId` 필드로 검색되지 않음 | `entityField`를 `id.tenantId`처럼 실제 경로로 선언하세요 |
+| keyset 스크롤이 거부됨 | `@EmbeddedId` 엔티티는 오프셋 스크롤만 지원합니다 |
+| 프로젝션 타입이 거부됨 | `findAllWithSearch`의 프로젝션은 인터페이스만, `projectWithSearch`는 인터페이스와 record를 받습니다 |
+| 프로젝션을 썼는데 모든 컬럼을 조회함 | `findAllWithSearch`의 프로젝션은 엔티티를 조회합니다. `projectWithSearch`를 사용하세요 |
+| 수정에서 값이 바뀌지 않음 | 패치의 null 속성, 식별자, 버전, 감사 필드, `updatable=false` 컬럼은 변경하지 않습니다. [일괄 수정·삭제](./bulk-write.md) |
+| 수정에서 0이나 false가 덮어써짐 | 패치 객체의 기본형 속성을 참조 타입으로 바꾸세요 |
 
-## 느린 조회·추가 SQL
+## 시간 구간과 JSON
 
-단일 키의 단순 검색은 엔티티를 직접 조회할 수 있습니다. 컬렉션 조인이나 복합 키가 있으면 ID를 먼저 선택한 후 엔티티를 조회합니다. 기존 동작을 유지하기 위해 컬렉션 자동 조회는 기본 활성화하며, 독립된 컬렉션마다 별도 쿼리를 실행할 수 있습니다. 전체 쿼리 수가 고정되거나 모든 중첩 관계를 읽는 것은 아닙니다.
+| 증상 | 확인할 항목 |
+| --- | --- |
+| 구간 건수의 합이 목록 건수와 다름 | 구간은 끝을 제외하고, 시각이 null인 행을 세지 않습니다. 기간과 시간축 필드를 확인하세요. [시간 구간 집계](./time-buckets.md) |
+| `LocalDateTime` 축의 구간이 어긋남 | 애플리케이션 시간대의 시각으로 해석합니다. [설정](./auto-configuration.md)의 시간대 결정 순서를 확인하세요 |
+| JSON 본문이 변환되지 않음 | 컨트롤러 파라미터에 `SearchCondition<MySearchDto>`처럼 타입 인자를 명시하세요 |
 
-`org.hibernate.SQL=DEBUG`로 SQL을 확인하세요. Hibernate 6·7의 바인딩 값 로깅은 `org.hibernate.orm.jdbc.bind=TRACE`입니다. 바인딩 로그에는 요청 값이 포함될 수 있으므로 애플리케이션 로그 정책을 적용하세요. 실제 데이터베이스의 실행 계획, 인덱스, 행 수와 연관 데이터 크기를 측정하세요. 결과 페이지가 작아도 큰 오프셋은 조회 비용이 발생합니다.
+## 문서 버전 선택기
 
-응답에 컬렉션이 필요하지 않다면 `searchable.hibernate.auto-fetch-collections=false`를 사용하세요. 필요한 값은 트랜잭션 안에서 매핑하거나 애플리케이션에서 명시적인 조회 계획을 정의하세요. 일괄 조회는 반복되는 지연 로딩을 줄이지만 모든 연관 관계를 한 SQL 문로 처리하지는 않습니다.
-
-`findAllWithSearch`는 짧은 페이지로 전체 개수를 확정할 수 있으면 COUNT를 생략합니다. `findFirstWithSearch`는 페이지 오프셋을 무시하고 COUNT 없이 첫 결과를 요청합니다. 내보내기에는 제한된 페이지를 순회하거나 애플리케이션 전용 쿼리를 작성하세요.
-
-## 복합 키·프로젝션·수정
-
-`@IdClass`와 `@EmbeddedId`를 지원합니다. DTO 필드를 실제 키 경로로 매핑하세요. 내장 키는 `id.tenantId` 같은 경로를 사용합니다. 엔티티 식별에는 키 구성요소의 타입과 값을 사용합니다. 조인으로 행이 중복될 수 있으면 EXISTS를 사용해 루트 엔티티를 한 번만 집계합니다.
-
-인터페이스 프로젝션은 Spring 프로젝션 기능을 사용합니다. 구체적인 프로젝션 클래스는 거부합니다. ModelMapper는 수정 DTO 변환에 사용합니다. 프로젝션을 사용해도 SQL 조회 열이 자동으로 줄어드는 것은 아닙니다. 필요한 지연 로딩 값에 접근할 수 있을 때 응답으로 변환하세요.
-
-수정·삭제는 조건에 맞는 엔티티를 200개씩 처리합니다. 수정 DTO에 없거나 null인 속성은 변경하지 않습니다. 생략한 값이 0·false로 처리되지 않도록 null을 허용하는 래퍼 타입을 사용하세요. ID, 버전, 감사 속성, `updatable=false` 열은 보호합니다. 엔티티 콜백과 기존 애플리케이션 트랜잭션을 유지합니다. 긴 외부 트랜잭션에서는 관리 중인 엔티티가 누적될 수 있으므로 처리 단위만으로 영속성 컨텍스트 크기가 제한되지는 않습니다.
-
-## 시간 집계·JSON 호환성
-
-시간 구간은 `[start, end)`이며 마지막 종료 시각은 제외합니다. 조인 결과가 여러 행이어도 루트 엔티티는 한 번만 집계합니다. 지원하는 데이터베이스의 정렬된 기간은 epoch 그룹 집계를 사용하고, 세밀한 시간 단위나 지원하지 않는 경우에는 조건 집계로 처리합니다. 페이지 목록과 개수를 비교할 때는 날짜 속성, 시간대, 정확한 기간을 확인하세요.
-
-기존 Jackson 2 헬퍼 메서드 시그니처를 유지하며 타입이 지정된 Jackson 3 HTTP 본문을 추가로 지원합니다. 역직렬화 시 검증 대상 DTO를 알 수 있도록 `SearchCondition<MySearchDto>`를 사용하세요. 타입 인수가 없는 `SearchCondition`만으로는 DTO를 지정할 수 없습니다. [API 참조](./api-reference.md)를 확인하세요.
-
-## 문서 이동
-
-선택한 버전에 같은 페이지가 있으면 언어, 페이지, 제목 위치를 유지합니다. 페이지가 없으면 같은 언어의 시작 페이지로 이동하며, 해당 언어도 없으면 영어 시작 페이지로 이동합니다. 네트워크 오류가 발생하면 현재 페이지를 유지하고 다시 시도할 수 있습니다. 버전 디렉터리가 없는 로컬 미리보기에는 버전 선택기를 표시하지 않습니다. 버전별 경로는 문서 가이드의 브라우저 테스트 환경에서 확인하세요.
+버전 선택기는 대상 버전에 같은 페이지가 있으면 언어, 페이지, 제목 위치를 유지합니다. 페이지가 없으면 그 버전의 같은 언어 시작 페이지로, 그것도 없으면 영어 시작 페이지로 이동합니다. 네트워크 오류가 발생하면 현재 페이지를 유지합니다. 버전 디렉터리가 없는 로컬 미리보기에는 선택기를 표시하지 않습니다.

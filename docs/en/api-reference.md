@@ -1,116 +1,166 @@
-# API Reference
+# API reference
 
-Public application APIs for `1.1.4-SNAPSHOT`. Import types from the packages shown below; Java examples use simple type names after imports. Internal query executors are implementation details rather than an application extension contract.
+The public types and methods an application uses. How to use them is on the guide page named with each group. Internal classes such as the query executors are not an extension contract and can change between versions.
 
 ## Annotations
 
-`SearchableField` is in `dev.simplecore.searchable.core.annotation`, targets fields and is retained at runtime.
+Package: `dev.simplecore.searchable.core.annotation`. Guide: [Declaring search fields](./search-fields.md).
 
-| Attribute | Type | Default | Meaning |
+| `@SearchableField` attribute | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `entityField` | `String` | `""` | Entity search path; empty uses DTO field name |
-| `operators` | `SearchOperator[]` | `{}` | Empty permits all operators, with type/value validation |
-| `sortable` | `boolean` | false | Whether the DTO field is allowed in sort input |
-| `sortField` | `String` | `""` | Sort path; falls back to entityField, then DTO field name |
+| `entityField` | `String` | `""` | The entity path that is searched. Empty uses the DTO field name |
+| `operators` | `SearchOperator[]` | `{}` | The operators allowed. Empty allows every operator |
+| `sortable` | `boolean` | `false` | Whether the field can be sorted by |
+| `sortField` | `String` | `""` | The sort path. Empty uses `entityField`, then the DTO field name |
+| `keyword` | `boolean` | `false` | Whether the `keyword` parameter searches the field |
+| `caseSensitivity` | `CaseSensitivity` | `DEFAULT` | `DEFAULT`, `INSENSITIVE`, `SENSITIVE` |
+| `match` | `CollectionMatch` | `JOINED` | `JOINED`, `ANY`, `NONE` |
+| `aggregatable` | `boolean` | `false` | Whether an aggregate addressed by the DTO field is allowed |
 
-`SearchableParams` is in `dev.simplecore.searchable.openapi.annotation`. Its required `Class<?> value()` identifies the DTO for OpenAPI documentation on a controller parameter. It does not perform request conversion.
+`@SearchableParams` is declared on a controller parameter. Its `value()` is the search DTO class and can be left out on a `SearchCondition<D>` parameter. The annotation of the same name in `dev.simplecore.searchable.openapi.annotation` is deprecated.
 
-## SearchCondition<D>
+## SearchCondition
 
-Package: `dev.simplecore.searchable.core.condition`.
+Package: `dev.simplecore.searchable.core.condition`. Guide: [Writing requests](./request-formats.md).
 
 | API | Behavior |
 | --- | --- |
-| `new SearchCondition<>()` | Empty node list and fetch set; pagination may remain unset |
-| `new SearchCondition<>(nodes, page, size)` | Initializes condition data; callers must not assume deep copying |
-| `getNodes()` | The ordered node list; JSON property is `conditions` |
-| `getPage()` / `setPage(Integer)` | Nullable zero-based page |
-| `getSize()` / `setSize(Integer)` | Nullable requested size |
-| `getSort()` / `setSort(Sort)` | Sort definition |
-| `getFetchFields()` / `setFetchFields(Set<String>)` | Server-only entity fetch paths |
-| `fromJson(String, Class<D>)` | Typed Jackson 2 conversion and DTO validation |
-| `toJson()` | Pretty JSON using the library mapper |
+| `new SearchCondition<>()` | A search without conditions. No page is set |
+| `getNodes()` | The ordered list of conditions and groups. The JSON property is `conditions` |
+| `getPage()` / `setPage(Integer)` | The page number, starting at 0 |
+| `getSize()` / `setSize(Integer)` | The page size |
+| `getSort()` / `setSort(Sort)` | The sort |
+| `getFetchFields()` / `setFetchFields(Set<String>)` | Fetch paths set by the server. Not read from JSON |
+| `fromJson(String, Class<D>)` | Converts a JSON string and validates it against the DTO |
+| `toJson()` | Converts to a JSON string |
 
-JSON helper methods retain the Jackson 2 `JsonProcessingException` signature. Validation errors have dedicated library exception types. Typed Jackson 3 body binding uses an adapter to the same validation pipeline. Both generations accept the documented lowercase/camelCase wire operator names. `fetchFields` is ignored on JSON input/output; submitted `entityField` values are resolved from DTO mapping rather than trusted.
+`fromJson` and `toJson` declare the `JsonProcessingException` of Jackson 2. Server code that builds a condition directly uses the nested types below. A condition built this way passes no DTO validation, so the builder is recommended.
 
-Nested types:
-
-- `Node`: logical connector access (`getOperator`/`setOperator`).
-- `Condition`: constructor `(LogicalOperator, String field, SearchOperator, Object value, Object value2, String entityField)`; getters for condition data; mutable connector and resolved entity path.
-- `Group`: empty constructor or `(LogicalOperator, List<Node>)`; ordered children and outer connector.
-- `Sort`: ordered `Order` list, `addOrder(Order)`.
-- `Order`: `(String field, Direction)` or `(String field, Direction, String entityField)`; `isAscending()` remains serialized for compatibility but is ignored as input.
-- `Direction`: `ASC` / `DESC`, wire values `asc` / `desc`.
-
-## Builders
-
-| API | Purpose |
-| --- | --- |
-| `SearchConditionBuilder.create(DTO.class)` | Begin DTO-aware construction |
-| `SearchConditionBuilder.from(existing, DTO.class)` | Copy structures before extending |
-| `where(Consumer<ConditionGroupBuilder>)` | Append initial conditions in declared order |
-| `and(...)` / `or(...)` | Combine a group with the accumulated expression |
-| `sort(Consumer<SortBuilder>)` | Specify sorting; `asc(field)` and `desc(field)` |
-| `page(int)` / `size(int)` | Set pagination |
-| `fetchFields(String...)` / `fetchFields(Set<String>)` | Add server fetch paths |
-| `build()` | Check structural and DTO constraints, then return the condition |
-
-Sort, page, size and fetch methods return `ChainedSearchCondition<D>`, preserving the fluent API. `FirstCondition` and `ChainedCondition` expose the 18 operators in [Search Operators](./search-operators.md). The latter also exposes corresponding `or...` methods and nested `and`/`or` consumers. Range methods take two bounds; IN methods take a collection. Null checks need only a field name.
-
-## URL parser
-
-`new SearchableParamsParser<D>(DTO.class).convert(Map<String,String>)` accepts `field.operator=value`, `sort=field.asc,other.desc`, `page` and `size`. Filter entries are ANDed. Only IN/NOT_IN and BETWEEN/NOT_BETWEEN split commas; ordinary string equality/contains preserves commas. Repeated query keys cannot be represented independently in a single-value Map. Use JSON for groups or literal commas inside an IN member.
-
-## Service API
-
-`SearchableService<T>` is in `dev.simplecore.searchable.core.service`.
-
-| Method | Return | Semantics |
+| Nested type | Construction | Note |
 | --- | --- | --- |
-| `findAllWithSearch(condition)` | `Page<T>` | Matching roots, pagination, sort and fetch |
-| `findAllWithSearch(condition, projectionInterface)` | `Page<P>` | Entity-backed interface projections |
-| `findOneWithSearch(condition)` | `Optional<T>` | No row: empty; more than one: nonunique-result error; not a first-row shortcut |
-| `findFirstWithSearch(condition)` | `Optional<T>` | First sorted root, ignores supplied page offset, no total count |
-| `countWithSearch(condition)` | `long` | Number of matching roots |
-| `existsWithSearch(condition)` | `boolean` | Whether a matching root exists |
-| `updateWithSearch(condition, updateData)` | `long` | All matching roots, protected-field rules and 200-entity chunks |
-| `deleteWithSearch(condition)` | `long` | All matching roots, entity callbacks/cascades and 200-entity chunks |
+| `Node` | none | The common type of conditions and groups. `getOperator()`, `setOperator(LogicalOperator)` |
+| `Condition` | `(LogicalOperator, String field, SearchOperator, Object value, Object value2, String entityField)` | A condition |
+| `Group` | `()`, `(LogicalOperator, List<Node>)` | An ordered list of child nodes |
+| `Sort` | `()` | `addOrder(Order)` adds an order |
+| `Order` | `(String field, Direction)`, `(String field, Direction, String entityField)` | A sort entry |
+| `Direction` | `ASC`, `DESC` | The JSON values are `asc`, `desc` |
 
-`DefaultSearchableService<T,ID>` takes `(JpaRepository<T,ID>, EntityManager)` and resolves the entity type from the concrete subclass. `SearchableServiceDelegate<T,ID>` takes those arguments plus `Class<T>`. The repository must also implement `JpaSpecificationExecutor<T>`. `SearchableServiceSupport<T,ID>` supplies default service methods through `getSearchableDelegate()`.
+`LogicalOperator` is `AND` or `OR`, with the JSON values `and` and `or`. `new SearchCondition<>(nodes, page, size)` sets the node list and the page together.
 
-A count/existence/unique/write operation does not restrict its result to the requested page, although common condition validation still applies. `findOne` may be translated by Spring Data to an `IncorrectResultSizeDataAccessException`; do not depend on one provider-specific wrapper type. [Advanced Features](./advanced-features.md) defines update and transaction semantics.
+## Builder
 
-## TimeBucketCounter
+Guides: [Writing requests](./request-formats.md), [Operators and values](./search-operators.md).
 
-Package: `dev.simplecore.searchable.core.service.bucket`.
-
-```java
-import dev.simplecore.searchable.core.condition.SearchCondition;
-import java.time.Instant;
-import java.util.List;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-
-// Signature on TimeBucketCounter:
-// <T> List<Long> count(Class<T> entityType, JpaSpecificationExecutor<T> repository,
-//     SearchCondition<?> condition, String timeAxisField,
-//     Instant from, Instant to, int buckets)
-```
-
-Construct with an `EntityManager` or inject the starter bean. `MAX_BUCKETS` is 512. The root time attribute must be `Instant`; the period is `[from,to)`. Invalid period/bucket count raises `IllegalArgumentException`. Counts have fixed length and count root entities once. See [time-count rules](./advanced-features.md#counting-rows-per-time-bucket).
-
-## Exceptions and validation
-
-`SearchableException` extends `RuntimeException`. Its subclasses are `SearchableValidationException`, `SearchableParseException`, `SearchableConfigurationException`, `SearchableOperationException` and `SearchableJoinException`. They do not extend Jakarta Validation's `ValidationException`.
-
-`SearchableFieldValidator` checks annotated fields and sorting permissions. `SearchConditionValidator` checks operators, converts values and applies Bean Validation to the searched property values, including both range bounds. It does not validate an otherwise empty DTO or require unrelated `@NotNull` values. Null-check operators do not validate a supplied value. `SearchRequestLimits` applies structural and executed page limits described in [Auto Configuration](./auto-configuration.md).
-
-## Utilities
-
-| Type | Main functions |
+| `SearchConditionBuilder` | Purpose |
 | --- | --- |
-| `SearchableFieldUtils` | DTO field hierarchy, mapping/sort paths, allowed operators, primary/composite key metadata, join paths, `clearCache()` |
-| `SearchableValueParser` | `parseValue(String, Class<?>)`, `parseValueForBetween(String, Class<?>, boolean isEndValue)` |
-| `SearchableTimeZoneHolder` | Shared application zone used by temporal conversion |
-| `MessageUtils` | Localized library message lookup |
+| `create(DTO.class)` | Starts a builder that validates against the DTO |
+| `from(existing, DTO.class)` | Copies an existing condition to extend it |
+| `where(...)` | The first group of conditions |
+| `and(...)` / `or(...)` | Combines a group with the whole expression so far |
+| `sort(...)` | Sets the sort with `asc(field)` and `desc(field)` of `SortBuilder` |
+| `page(int)` / `size(int)` | Sets the page |
+| `fetchFields(String...)` / `fetchFields(Set<String>)` | Adds fetch paths |
+| `build()` | Validates the structure and the DTO declaration and returns the condition |
 
-Prefer builder/parser/service APIs for application requests. Direct node construction and metadata helpers do not replace DTO allowlist checks.
+Condition methods used inside a group:
+
+| Combination | Methods |
+| --- | --- |
+| First condition, AND | `where`, `equals`, `notEquals`, `greaterThan`, `greaterThanOrEqualTo`, `lessThan`, `lessThanOrEqualTo`, `contains`, `notContains`, `startsWith`, `notStartsWith`, `endsWith`, `notEndsWith`, `isNull`, `isNotNull`, `in`, `notIn`, `between`, `notBetween` |
+| OR | `orEquals`, `orNotEquals`, `orGreaterThan`, `orGreaterThanOrEqualTo`, `orLessThan`, `orLessThanOrEqualTo`, `orContains`, `orNotContains`, `orStartsWith`, `orNotStartsWith`, `orEndsWith`, `orNotEndsWith`, `orIsNull`, `orIsNotNull`, `orIn`, `orNotIn`, `orBetween`, `orNotBetween` |
+| Nested group | `and(...)`, `or(...)` |
+
+Range methods take two bounds, list methods a `List`, and the null checks a field name only. The lambdas of `where`, `and` and `or` receive a `ConditionGroupBuilder`. The condition methods are declared on the interfaces `FirstCondition` and `ChainedCondition`, and the sort, page and fetch methods return a `ChainedSearchCondition<D>`, so calls can be chained.
+
+## Parameter parser
+
+`new SearchableParamsParser<>(DTO.class).convert(Map<String, String>)` converts query parameters into a `SearchCondition`. With `true` as the second constructor argument, a name that is not a search parameter is left out. The reserved parameter names are `sort`, `page`, `size` and `keyword`; `keyword` is available as the constant `SearchableParamsParser.KEYWORD_PARAM`.
+
+## Services
+
+Package: `dev.simplecore.searchable.core.service`. Guides: [Ways to read](./reading-results.md), [Bulk update and delete](./bulk-write.md).
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `findAllWithSearch(condition)` | `Page<T>` | A page and the total |
+| `findAllWithSearch(condition, type)` | `Page<P>` | An entity-backed interface projection |
+| `findOneWithSearch(condition)` | `Optional<T>` | The only matching row. Fails when two or more match |
+| `findFirstWithSearch(condition)` | `Optional<T>` | The first row of the sort |
+| `countWithSearch(condition)` | `long` | The count |
+| `existsWithSearch(condition)` | `boolean` | Whether a row exists |
+| `scrollWithSearch(condition, position)` | `Window<T>` | One window |
+| `scrollPosition(cursor)` | `ScrollPosition` | Turns cursor text into a position. Null or blank is the first position |
+| `projectWithSearch(condition, type)` | `Page<P>` | A column projection |
+| `updateWithSearch(condition, patch)` | `long` | Updates every row the condition matches |
+| `deleteWithSearch(condition)` | `long` | Deletes every row the condition matches |
+
+Every method except `scrollPosition` has an overload that takes a `Specification<T>` scope after the condition. The interface `SearchableService<T>` declares only the reads, counts, updates and deletes without a scope. The scope overloads, scrolling and column projections are on `SearchableServiceSupport` and `SearchableServiceDelegate`.
+
+| Type | Construction |
+| --- | --- |
+| `DefaultSearchableService<T, ID>` | `(JpaRepository, EntityManager)`, optionally a `PlatformTransactionManager` |
+| `SearchableServiceDelegate<T, ID>` | `(JpaRepository, EntityManager, Class<T>)`, optionally a `PlatformTransactionManager` |
+| `SearchableServiceSupport<T, ID>` | Implementing `getSearchableDelegate()` provides the methods above as default methods |
+
+`SearchCursor.encode(ScrollPosition)` turns a scroll position into text that fits a URL, and `SearchCursor.decode(String, EntityManager, Class<?>)` reads it back.
+
+## Aggregates
+
+Type: `SearchAggregator`. Package: `dev.simplecore.searchable.core.service.aggregate`. Guide: [Aggregates](./aggregates.md).
+
+| API | Returns | Meaning |
+| --- | --- | --- |
+| `countByValue(entityType, condition, scope, field)` | `List<ValueCount>` | The count per value |
+| `aggregate(entityType, condition, scope, aggregates)` | `List<AggregateValue>` | One figure per `Aggregate(field, op)` |
+| Both methods with a DTO class before the field | The same | DTO field names, only `aggregatable` fields |
+
+`Op` is `SUM`, `AVG`, `COUNT`, `COUNT_DISTINCT`, `MIN` or `MAX`, with the names `sum`, `avg`, `count`, `countDistinct`, `min` and `max`. `ValueCount` gives `value` and `count`; `AggregateValue` gives `field`, `op`, `value` and `result`.
+
+## Time buckets
+
+Types: `TimeBucketCounter`, `TimeWindowParams`, `EpochMillisFunctionContributor`. Package: `dev.simplecore.searchable.core.service.bucket`. Guide: [Time buckets](./time-buckets.md).
+
+| API | Returns | Meaning |
+| --- | --- | --- |
+| `count(entityType, condition, scope, field, from, to, buckets)` | `List<Long>` | The count per equal bucket |
+| `countByCalendar(entityType, condition, scope, field, from, to, unit, zone)` | `List<TimeBucket>` | The count per calendar bucket |
+| `TimeWindowParams.strip(params)` | `Map<String, String>` | The search parameters without the window parameters `from`, `to` and `buckets` |
+
+`TimeBucket` gives `from`, `to` and `count`. `count` also keeps the earlier overload that takes a repository. `EpochMillisFunctionContributor` registers the `epoch_millis` function with Hibernate and is not called by an application.
+
+## Exceptions
+
+Package: `dev.simplecore.searchable.core.exception`. Guide: [Errors and messages](./errors-and-messages.md).
+
+`SearchableException` (the base type), `SearchableValidationException`, `SearchableParseException`, `SearchableConfigurationException`, `SearchableJoinException`, `SearchableOperationException`.
+
+## Configuration support types
+
+Guide: [Extension and integration](./advanced-features.md).
+
+| Type | Function |
+| --- | --- |
+| `SearchRequestLimits` | `setStructureLimits(Structure)` sets the structural request limits |
+| `SearchableTimeZoneHolder` | `setZoneId(ZoneId)` sets the time zone |
+| `SearchablePatternMatchingHolder` | `setCaseInsensitive(boolean)` sets the case of patterns |
+| `SearchableConversionHolder` | `setConversionService(ConversionService)` connects the value conversion |
+| `MessageUtils` | `init(MessageSource)` connects messages, `getMessage` reads one |
+| `SearchableJpaSettings` | The key constants of the persistence unit properties |
+| `SearchableFieldUtils` | Metadata of DTO fields and entity keys, `clearCache()` |
+| `SearchableValueParser` | `parseValue(String, Class<?>)` and `parseValueForBetween(String, Class<?>, boolean)` convert text to a field type |
+| `SearchConditionValidator`, `SearchableFieldValidator` | The validators the builder and the parser use |
+
+## Starter and OpenAPI modules
+
+Guides: [Settings](./auto-configuration.md), [OpenAPI](./openapi-integration.md).
+
+| Type | Role |
+| --- | --- |
+| `SearchableProperties` | The properties class that reads the `searchable.*` settings |
+| `SearchableJpaConfiguration` | The auto-configuration of the time zone, the request limits, the message and conversion wiring and the aggregate beans |
+| `SearchableHibernatePropertiesCustomizer` | Hands the persistence unit settings and the Hibernate defaults to the `EntityManagerFactory` |
+| `SearchableWebConfiguration` | The auto-configuration that registers the parameter resolver and the 400 handler |
+| `SearchConditionArgumentResolver` | Resolves a `@SearchableParams SearchCondition<D>` parameter |
+| `SearchableExceptionHandler` | The handler that answers an invalid search with 400 |
+| `SearchableOpenApiConfiguration` | The auto-configuration that registers the `searchConditionCustomizer` bean |
+| `OpenApiDocCustomiser` | The `OperationCustomizer` that documents search parameters |

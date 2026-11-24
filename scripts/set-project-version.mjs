@@ -11,7 +11,8 @@ fs.writeFileSync('build.gradle', build.replace(`version = '${current}'`, `versio
 const pages = ['README.md'];
 for (const locale of ['en', 'ko']) {
   for (const name of fs.readdirSync(`docs/${locale}`)) {
-    if (name.endsWith('.md') && !['changelog.md', 'documentation-guide.md'].includes(name)) pages.push(path.join('docs', locale, name));
+    // The changelog and the upgrade guide name released versions, which a new version must not rewrite.
+    if (name.endsWith('.md') && !['changelog.md', 'documentation-guide.md', 'upgrade.md'].includes(name)) pages.push(path.join('docs', locale, name));
   }
   if (!next.endsWith('-SNAPSHOT')) {
     const file = `docs/${locale}/changelog.md`;

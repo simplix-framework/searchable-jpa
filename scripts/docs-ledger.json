@@ -1,0 +1,434 @@
+{
+  "groups": [
+    {
+      "id": "operator names",
+      "source": {"extract": "enumWireNames", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/operator/SearchOperator.java"},
+      "guide": "search-operators.md",
+      "reference": "search-operators.md"
+    },
+    {
+      "id": "operator constants",
+      "source": {"extract": "enumConstants", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/operator/SearchOperator.java"},
+      "guide": "search-operators.md",
+      "reference": "search-operators.md"
+    },
+    {
+      "id": "@SearchableField attributes",
+      "source": {"extract": "annotationAttributes", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/annotation/SearchableField.java"},
+      "guide": "search-fields.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "CaseSensitivity",
+      "source": {"extract": "enumConstants", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/annotation/CaseSensitivity.java"},
+      "guide": "search-fields.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "CollectionMatch",
+      "source": {"extract": "enumConstants", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/annotation/CollectionMatch.java"},
+      "guide": "relationship-and-two-phase-query.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "service operations",
+      "source": {"extract": "defaultMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/SearchableServiceSupport.java"},
+      "guide": "reading-results.md",
+      "guides": {
+        "updateWithSearch": "bulk-write.md",
+        "deleteWithSearch": "bulk-write.md"
+      },
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "condition builder",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/SearchConditionBuilder.java"},
+      "guide": "request-formats.md",
+      "guides": {
+        "from": "server-scope-and-limits.md",
+        "fetchFields": "relationship-and-two-phase-query.md"
+      },
+      "reference": "api-reference.md",
+      "internal": {
+        "addGroup": "called by the group builders, not by applications",
+        "getDtoClass": "read by the group builders, not by applications"
+      }
+    },
+    {
+      "id": "condition methods",
+      "source": {"extract": "interfaceMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/builder/FirstCondition.java"},
+      "guide": "search-operators.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "chained condition methods",
+      "source": {"extract": "interfaceMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/builder/ChainedCondition.java"},
+      "guide": "request-formats.md",
+      "guideSamples": ["and", "or", "orContains", "orIn"],
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "sort builder",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/builder/SortBuilder.java"},
+      "guide": "request-formats.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "parameter parser",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/parser/SearchableParamsParser.java"},
+      "guide": "request-formats.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "scroll cursor",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/SearchCursor.java"},
+      "guide": "reading-results.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "aggregator",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/aggregate/SearchAggregator.java"},
+      "guide": "aggregates.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "aggregate operations",
+      "source": {"extract": "enumWireNames", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/aggregate/SearchAggregator.java"},
+      "guide": "aggregates.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "time bucket counter",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/bucket/TimeBucketCounter.java"},
+      "guide": "time-buckets.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "time window parameters",
+      "source": {"extract": "publicMethods", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/bucket/TimeWindowParams.java"},
+      "guide": "time-buckets.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "time window parameter names",
+      "source": {"extract": "stringConstants", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/bucket/TimeWindowParams.java"},
+      "guide": "time-buckets.md",
+      "reference": "time-buckets.md"
+    },
+    {
+      "id": "messages",
+      "source": {"extract": "bundleKeys", "file": "searchable-jpa-core/src/main/resources/messages/message.properties"},
+      "guide": "errors-and-messages.md",
+      "reference": "errors-and-messages.md"
+    },
+    {
+      "id": "settings",
+      "source": {"extract": "propertyKeys", "file": "spring-boot-starter-searchable-jpa/src/main/java/dev/simplecore/searchable/properties/SearchableProperties.java", "prefix": "searchable"},
+      "guide": "auto-configuration.md",
+      "reference": "auto-configuration.md"
+    },
+    {
+      "id": "persistence unit settings",
+      "source": {"extract": "stringConstants", "file": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/config/SearchableJpaSettings.java"},
+      "guide": "auto-configuration.md",
+      "reference": "auto-configuration.md"
+    },
+    {
+      "id": "exceptions",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/exception"},
+      "guide": "errors-and-messages.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of annotation",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/annotation"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of condition",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of operator",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/operator"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of parser",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/parser"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of builder",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/builder"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "ChainedSearchConditionImpl": "the implementation behind ChainedSearchCondition, never named by an application"
+      }
+    },
+    {
+      "id": "types of validator",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/validator"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of jackson",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/condition/jackson"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "NodeDeserializer": "Jackson wiring of SearchCondition, applied by annotations on the type",
+        "SearchConditionDeserializer": "Jackson wiring of SearchCondition, applied by annotations on the type",
+        "SearchConditionJackson3Deserializer": "Jackson wiring of SearchCondition, applied by annotations on the type",
+        "SearchConditionJson": "Jackson wiring of SearchCondition, applied by annotations on the type"
+      }
+    },
+    {
+      "id": "types of service",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of aggregate",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/aggregate"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of bucket",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/bucket"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of join",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/join"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "EntityPaths": "builds the queries of a search; not an extension contract",
+        "JoinManager": "builds the queries of a search; not an extension contract"
+      }
+    },
+    {
+      "id": "types of specification",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/service/specification"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "MatchingRows": "builds the queries of a search; not an extension contract",
+        "PredicateBuilder": "builds the queries of a search; not an extension contract",
+        "RelationshipAnalyzer": "builds the queries of a search; not an extension contract",
+        "SearchableSpecificationBuilder": "builds the queries of a search; not an extension contract",
+        "SpecificationBuilder": "builds the queries of a search; not an extension contract",
+        "SpecificationWithPageable": "builds the queries of a search; not an extension contract",
+        "TwoPhaseQueryExecutor": "builds the queries of a search; not an extension contract"
+      }
+    },
+    {
+      "id": "types of utils",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/utils"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "EntityKey": "reads entity keys for the query executors; not an extension contract",
+        "JsonTypeDetector": "detects JSON columns for the predicate builder; not an extension contract",
+        "SearchableDtoMetadata": "caches DTO declarations for the validators; not an extension contract"
+      }
+    },
+    {
+      "id": "types of config",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/config"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of i18n",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-core/src/main/java/dev/simplecore/searchable/core/i18n"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of starter properties",
+      "source": {"extract": "typeNames", "directory": "spring-boot-starter-searchable-jpa/src/main/java/dev/simplecore/searchable/properties"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of starter auto-configuration",
+      "source": {"extract": "typeNames", "directory": "spring-boot-starter-searchable-jpa/src/main/java/dev/simplecore/searchable/autoconfigure"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of starter web",
+      "source": {"extract": "typeNames", "directory": "spring-boot-starter-searchable-jpa/src/main/java/dev/simplecore/searchable/web"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of openapi customiser",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-openapi/src/main/java/dev/simplecore/searchable/openapi/customiser"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of openapi annotation",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-openapi/src/main/java/dev/simplecore/searchable/openapi/annotation"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md"
+    },
+    {
+      "id": "types of openapi utils",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-openapi/src/main/java/dev/simplecore/searchable/openapi/utils"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "OpenApiDocUtils": "schema helpers of the document customizer; not an extension contract",
+        "SearchParameterSupport": "reads the search parameter of a handler method for the customizer; not an extension contract"
+      }
+    },
+    {
+      "id": "types of openapi generator",
+      "source": {"extract": "typeNames", "directory": "searchable-jpa-openapi/src/main/java/dev/simplecore/searchable/openapi/generator"},
+      "guide": "api-reference.md",
+      "reference": "api-reference.md",
+      "internal": {
+        "DescriptionGenerator": "writes one part of the API document for the customizer; not an extension contract",
+        "ExampleGenerator": "writes one part of the API document for the customizer; not an extension contract",
+        "ParameterGenerator": "writes one part of the API document for the customizer; not an extension contract",
+        "ParameterSchemaGenerator": "writes one part of the API document for the customizer; not an extension contract"
+      }
+    }
+  ],
+  "features": [
+    {
+      "id": "GET grammar and reserved parameters",
+      "guide": "request-formats.md",
+      "tokens": ["title.contains=Spring", "sort=", "page=", "size=", "keyword="]
+    },
+    {
+      "id": "JSON body shape",
+      "guide": "request-formats.md",
+      "tokens": ["\"conditions\"", "\"searchOperator\"", "\"value2\"", "\"direction\""]
+    },
+    {
+      "id": "controller wiring",
+      "guide": "request-formats.md",
+      "tokens": ["@SearchableParams", "@RequestBody", "SearchableParamsParser", "ignore-unknown"]
+    },
+    {
+      "id": "JSON helpers",
+      "guide": "request-formats.md",
+      "tokens": ["fromJson", "toJson"]
+    },
+    {
+      "id": "DTO shapes and constraints",
+      "guide": "search-fields.md",
+      "tokens": ["record PostQuery", "extends TimestampSearchDTO", "@Size"]
+    },
+    {
+      "id": "accepted date and time formats",
+      "guide": "search-operators.md",
+      "tokens": ["uuuu-MM-dd", "dd-MM-uuuu", "uuuuMMdd", "HH:mm:ss"]
+    },
+    {
+      "id": "boolean and enum values",
+      "guide": "search-operators.md",
+      "tokens": ["yes/no", "on/off"]
+    },
+    {
+      "id": "matching through a collection",
+      "guide": "relationship-and-two-phase-query.md",
+      "tokens": ["commentContent.contains=Good", "anyCommentWriter", "noCommentWriter", "@ElementCollection", "setFetchFields"]
+    },
+    {
+      "id": "projections",
+      "guide": "reading-results.md",
+      "tokens": ["PostSummary", "PostTitle"]
+    },
+    {
+      "id": "server scope",
+      "guide": "server-scope-and-limits.md",
+      "tokens": ["Specification<Post>", "searchable.write.require-filter"]
+    },
+    {
+      "id": "request limits",
+      "guide": "server-scope-and-limits.md",
+      "tokens": ["max-nodes", "max-depth", "max-in-values", "max-sort-fields", "max-page-size"]
+    },
+    {
+      "id": "fields an update leaves unchanged",
+      "guide": "bulk-write.md",
+      "tokens": ["updatable=false", "StatusPatch", "chunk-size"]
+    },
+    {
+      "id": "aggregate types",
+      "guide": "aggregates.md",
+      "tokens": ["ValueCount", "AggregateValue", "Aggregate", "aggregatable", "max-groups"]
+    },
+    {
+      "id": "time count fallback",
+      "guide": "time-buckets.md",
+      "tokens": ["epoch_millis", "EpochMillisFunctionContributor", "TimeBucket", "max-buckets"]
+    },
+    {
+      "id": "problem details",
+      "guide": "errors-and-messages.md",
+      "tokens": ["searchable.web.problem-details.enabled", "\"detail\"", "SearchableExceptionHandler"]
+    },
+    {
+      "id": "message override",
+      "guide": "errors-and-messages.md",
+      "tokens": ["MessageSource", "messages.properties"]
+    },
+    {
+      "id": "API document",
+      "guide": "openapi-integration.md",
+      "tokens": ["GroupedOpenApi", "@Schema", "searchable.swagger.enabled", "/v3/api-docs", "searchConditionCustomizer"]
+    },
+    {
+      "id": "time zone resolution",
+      "guide": "auto-configuration.md",
+      "tokens": ["applicationZoneId", "spring.jackson.time-zone"]
+    },
+    {
+      "id": "Hibernate defaults",
+      "guide": "auto-configuration.md",
+      "tokens": ["hibernate.default_batch_fetch_size", "hibernate.jdbc.batch_size", "hibernate.order_inserts", "hibernate.order_updates", "hibernate.query.in_clause_parameter_padding"]
+    },
+    {
+      "id": "registered beans",
+      "guide": "auto-configuration.md",
+      "tokens": ["TimeBucketCounter", "SearchAggregator", "SearchConditionArgumentResolver", "SearchableExceptionHandler", "searchConditionCustomizer"]
+    },
+    {
+      "id": "query strategy",
+      "guide": "two-phase-query-optimization.md",
+      "tokens": ["EXISTS", "searchable.in-clause-batch-size", "searchable.hibernate.auto-fetch-collections"]
+    },
+    {
+      "id": "service composition and transactions",
+      "guide": "advanced-features.md",
+      "tokens": ["SearchableServiceDelegate", "SearchableServiceSupport", "PlatformTransactionManager"]
+    },
+    {
+      "id": "core module without the starter",
+      "guide": "advanced-features.md",
+      "tokens": ["SearchableTimeZoneHolder.setZoneId", "SearchablePatternMatchingHolder.setCaseInsensitive", "SearchableConversionHolder.setConversionService", "SearchRequestLimits.setStructureLimits", "MessageUtils.init", "SearchableJpaSettings"]
+    },
+    {
+      "id": "removed and changed API",
+      "guide": "upgrade.md",
+      "tokens": ["JoinStrategyManager", "extractJoinPaths", "isValidPath", "countToManyPaths", "detectManyToManyFields", "toCamelCase", "configureHibernateOptimizations", "configureSearchLimits"]
+    }
+  ]
+}

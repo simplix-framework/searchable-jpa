@@ -1,74 +1,136 @@
-# Search Operators
+# Operators and values
 
-All 18 operators are listed below. A DTO's `@SearchableField` controls which are allowed. An empty operator array allows all operators; the value and underlying field type must still support the operation.
+After this page you know which value each operator needs and can predict how a date range and a text pattern are compared. The page uses the forms of [Writing requests](./request-formats.md).
 
-| Java constant | Wire name / builder method | Meaning |
+## Operators
+
+The name is the same in a GET parameter, in the `searchOperator` of JSON and as a builder method.
+
+| Constant | Name | GET example | Meaning |
+| --- | --- | --- | --- |
+| `EQUALS` | `equals` | `status.equals=DRAFT` | Equal to the value |
+| `NOT_EQUALS` | `notEquals` | `status.notEquals=DRAFT` | Not equal to the value |
+| `GREATER_THAN` | `greaterThan` | `viewCount.greaterThan=100` | Greater than the value |
+| `GREATER_THAN_OR_EQUAL_TO` | `greaterThanOrEqualTo` | `viewCount.greaterThanOrEqualTo=100` | Greater than or equal to the value |
+| `LESS_THAN` | `lessThan` | `viewCount.lessThan=100` | Less than the value |
+| `LESS_THAN_OR_EQUAL_TO` | `lessThanOrEqualTo` | `viewCount.lessThanOrEqualTo=100` | Less than or equal to the value |
+| `CONTAINS` | `contains` | `title.contains=Spring` | Contains the text |
+| `NOT_CONTAINS` | `notContains` | `title.notContains=Spring` | Does not contain the text |
+| `STARTS_WITH` | `startsWith` | `title.startsWith=Spring` | Starts with the text |
+| `NOT_STARTS_WITH` | `notStartsWith` | `title.notStartsWith=Spring` | Does not start with the text |
+| `ENDS_WITH` | `endsWith` | `title.endsWith=notes` | Ends with the text |
+| `NOT_ENDS_WITH` | `notEndsWith` | `title.notEndsWith=notes` | Does not end with the text |
+| `IS_NULL` | `isNull` | `publishedAt.isNull=true` | Has no value |
+| `IS_NOT_NULL` | `isNotNull` | `publishedAt.isNotNull=true` | Has a value |
+| `IN` | `in` | `status.in=DRAFT,PUBLISHED` | Equal to one of the listed values |
+| `NOT_IN` | `notIn` | `status.notIn=DRAFT,PUBLISHED` | Equal to none of the listed values |
+| `BETWEEN` | `between` | `viewCount.between=100,500` | Between two values, both included |
+| `NOT_BETWEEN` | `notBetween` | `viewCount.notBetween=100,500` | Outside the two values |
+
+The `operators` declaration of the DTO decides which operators a field accepts. The builder has a method of the same name for each, as in `equals("status", "DRAFT")`, `in("status", List.of(...))`, `between("viewCount", 100L, 500L)` and `isNull("publishedAt")`, and the first condition starts with `where`.
+
+## Number of values
+
+| Operators | GET | JSON |
 | --- | --- | --- |
-| `EQUALS` | `equals` | Equal to a value |
-| `NOT_EQUALS` | `notEquals` | Not equal to a value |
-| `GREATER_THAN` | `greaterThan` | Strictly greater |
-| `GREATER_THAN_OR_EQUAL_TO` | `greaterThanOrEqualTo` | Greater than or equal |
-| `LESS_THAN` | `lessThan` | Strictly less |
-| `LESS_THAN_OR_EQUAL_TO` | `lessThanOrEqualTo` | Less than or equal |
-| `CONTAINS` | `contains` | Literal substring |
-| `NOT_CONTAINS` | `notContains` | No literal substring |
-| `STARTS_WITH` | `startsWith` | Literal prefix |
-| `NOT_STARTS_WITH` | `notStartsWith` | Not the literal prefix |
-| `ENDS_WITH` | `endsWith` | Literal suffix |
-| `NOT_ENDS_WITH` | `notEndsWith` | Not the literal suffix |
-| `IS_NULL` | `isNull` | SQL NULL |
-| `IS_NOT_NULL` | `isNotNull` | Not SQL NULL |
-| `IN` | `in` | Member of a collection |
-| `NOT_IN` | `notIn` | Not a member |
-| `BETWEEN` | `between` | Inclusive lower and upper bounds |
-| `NOT_BETWEEN` | `notBetween` | Outside the inclusive range |
+| `isNull`, `isNotNull` | The value is not read. `isNull=false` is still a null check | `value` is left out |
+| `in`, `notIn` | Values separated by commas, at least one | An array |
+| `between`, `notBetween` | Two values separated by a comma | `value` and `value2` |
+| Every other operator | One value | `value` |
 
-## Request syntax
-
-```text
-title.contains=Spring
-viewCount.greaterThanOrEqualTo=100
-status.in=PUBLISHED,DRAFT
-createdAt.between=2026-10-01T00:00:00Z,2026-10-31T23:59:59Z
-content.isNull=true
-sort=createdAt.desc,id.asc
+<!-- snippet: op-comparison.http -->
+```http
+GET /api/posts?viewCount.greaterThanOrEqualTo=100&sort=viewCount.asc
 ```
 
-The null-check parameter value is ignored: `isNull=false` still means IS NULL. Omit the condition to skip the check. GET filters are ANDed and use one Map entry per key. Percent-encode query values, especially `+`, `&`, spaces and non-ASCII characters; `curl --data-urlencode` avoids manual encoding errors.
+The request returns the posts with at least 100 views: Spring Boot basics (120), Spring Security notes (300) and JPA paging in depth (480).
 
-IN/NOT_IN accept comma-separated GET values; JSON uses arrays. BETWEEN/NOT_BETWEEN require exactly two GET values, or `value` and `value2` in JSON. A comma inside a single-value operator remains literal. To include a literal comma in an IN member, use a JSON array instead of the GET comma syntax.
-
-```json
-{"conditions":[
-  {"field":"viewCount","searchOperator":"between","value":100,"value2":500},
-  {"operator":"and","field":"status","searchOperator":"in","value":["PUBLISHED","DRAFT"]}
-]}
+<!-- snippet: op-in.http -->
+```http
+GET /api/posts?status.in=PUBLISHED,DRAFT&sort=id.asc
 ```
+
+The request returns the three posts whose status is `PUBLISHED` or `DRAFT`.
 
 ## Types and conversion
 
-Strings, numeric primitives/wrappers, BigDecimal/BigInteger, booleans, enums, UUID and supported Java temporal types can be converted. Numeric comparison/range operators require compatible comparable values. Enum names are converted to constants; do not assume arbitrary display labels are accepted. Prefer equality, IN and null checks for enums and UUIDs unless your database mapping supports a meaningful ordering.
+A search value is converted to the type of the DTO field before it is compared.
 
-Boolean parsing accepts true/false, 1/0, yes/no, y/n and on/off, case-insensitively. Invalid values raise a parse/validation error. DTO field constraints such as `@Min`, `@Size` and `@Pattern` apply to the searched values; unrelated required DTO properties do not block a search. Both BETWEEN bounds are checked.
+| Field type | Accepted values |
+| --- | --- |
+| `String` | The text as sent. It is neither trimmed nor normalized |
+| Integers, decimals, `BigDecimal`, `BigInteger` | A number |
+| `boolean` | `true/false`, `1/0`, `yes/no`, `y/n`, `on/off`, in any case |
+| enum | The name of a constant |
+| `UUID` | A UUID string |
+| Dates and times | The formats below |
+| Other types | With the starter, the conversion service of Spring MVC converts them. Without a converter the value is refused |
 
-NULL is not an ordinary SQL value. Negative predicates such as NOT IN and NOT LIKE do not automatically include SQL NULL rows. Use an explicit OR IS NULL group when that is the intended result.
+Use the ordering and range operators only on types that have an order. For enums and UUIDs, `equals`, `in` and the null checks are the fitting operators.
 
-## Pattern matching
+## Date and time formats
 
-Pattern operators use case-insensitive comparison by lowering values and database expressions. Case behavior still depends on the database's locale/collation. Literal `%`, `_` and the escape character are escaped before LIKE, with an explicit escape clause. A user cannot inject a wildcard simply by putting `%` in a contains value. Empty or whitespace-only patterns are rejected.
+ISO formats are recommended. These formats are read as well.
 
-A leading wildcard in contains/endsWith can prevent normal index use. Lowercasing can require a functional index or an appropriate database collation. Choose indexed equality/prefix searches or a dedicated full-text search where appropriate.
+| Target | Formats |
+| --- | --- |
+| Date | `uuuu-MM-dd`, `uuuu/MM/dd`, `uuuu.MM.dd`, `uuuuMMdd`, `dd-MM-uuuu`, `dd/MM/uuuu` |
+| Date and time | `uuuu-MM-dd'T'HH:mm:ss` (with fractions), `uuuu-MM-dd HH:mm:ss`, `uuuu/MM/dd HH:mm:ss`, `uuuu.MM.dd HH:mm:ss`, `dd-MM-uuuu HH:mm:ss`, `dd/MM/uuuu HH:mm:ss`, `uuuuMMddHHmmss` |
+| Time with an offset or a zone | `2026-10-30T12:34:56Z`, `2026-10-30T12:34:56+09:00`, `2026-10-30 12:34:56 +09:00`, RFC 1123 |
+| Time of day | `HH:mm:ss` (with fractions), `HHmmss`, `HHmm`, `H:mm` |
 
-For a JSON-typed entity field, supported pattern operations compare its textual representation. They are not JSON-path queries and can depend on database serialization/casting. For structural JSON searches, use a database-aware repository query.
+- A date the calendar does not have, such as February 31, is refused instead of being moved to a nearby day.
+- A value without an offset is read in the time zone of the application. [Settings](./auto-configuration.md) gives the order in which that zone is decided.
+- Send both date and time for a `LocalDateTime` field. A date alone is accepted by the range operators described next.
 
-## Date and time
+## Ranges written with dates only
 
-Prefer ISO input: `2026-10-30`, `12:34:56`, `2026-10-30T12:34:56`, or an offset/instant such as `2026-10-30T12:34:56+09:00`. The target DTO type determines conversion. A date-only BETWEEN lower bound expands to start of day, the upper bound to end of day for date-time types. Instant/offset conversion uses the [application timezone rules](./auto-configuration.md#timezone-resolution).
+When the bounds of `between` are dates, the range starts at midnight of the first date and covers the whole of the last date. The upper bound is compared as "before the next midnight", so the precision a database stores times with cannot move it into the next day. A bound written with a time ends at that time.
 
-BETWEEN is inclusive and differs from `TimeBucketCounter`'s half-open periods. Database timestamp precision may round an end-of-day nanosecond. For adjacent reporting periods, use explicit start-inclusive/end-exclusive comparisons or the counter API and test actual storage precision.
+![Bounds of a date range](./_images/date-range-boundary.svg)
 
-## Logical groups and limits
+<!-- snippet: op-between-date.http -->
+```http
+GET /api/posts?createdAt.between=2026-10-01,2026-10-03&sort=id.asc
+```
 
-The first node supplies the initial result. Later nodes combine with the accumulated result using `and` or `or`, left to right. Nested groups supply parentheses. Unknown logical operators are rejected. A group’s connector applies to the group as a whole, including a group with only one child.
+The request returns the two posts created on October 1 and October 3. `between` includes both ends, which differs from the buckets of [Time buckets](./time-buckets.md) (start included, end excluded). To cut adjacent periods without overlap, combine `greaterThanOrEqualTo` with `lessThan`.
 
-A search accepts at most 1,000 condition/group nodes, 32 nested group levels, 1,000 collection values per condition and 16 sort fields. Page limits are separately configurable. See [Basic Usage](./basic-usage.md) and [Auto Configuration](./auto-configuration.md).
+## Text patterns
+
+- `%`, `_` and the escape character in a search text are compared as characters, and so is `[` on SQL Server. A client cannot insert a wildcard.
+- An empty text and a text of spaces only are refused.
+- Case follows the `caseSensitivity` of [Declaring search fields](./search-fields.md) and the setting `searchable.pattern-matching.case-insensitive`.
+- `contains` and `endsWith` are patterns with an open start, which an ordinary index does not serve. With much data, consider `equals`, `startsWith` or a full-text search.
+- A pattern operator on a JSON column compares the text the database produces for it. It is not a JSON path search; write a repository query to search the structure.
+
+## Null and negated conditions
+
+NULL in SQL does not compare like a value. A negated condition such as `notIn`, `notEquals` or `notContains` does not match rows without a value. When those rows are wanted too, combine `isNull` in an OR group.
+
+## Refused requests
+
+<!-- snippet: operator-not-allowed.http -->
+```http
+GET /api/posts?status.contains=PUB
+```
+
+`status` does not allow `CONTAINS`.
+
+<!-- snippet: bad-enum.http -->
+```http
+GET /api/posts?status.equals=DONE
+```
+
+`DONE` is not a constant of `PostStatus`. The error message lists the constants that are allowed.
+
+<!-- snippet: bad-date.http -->
+```http
+GET /api/posts?createdAt.between=2026-02-31,2026-03-01
+```
+
+February 31 is not a date of the calendar.
+
+## Next step
+
+[Searching related data](./relationship-and-two-phase-query.md) searches posts by fields of authors, comments and tags.

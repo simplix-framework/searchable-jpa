@@ -18,6 +18,7 @@ for (const stable of ['2.0.0', '1.1.3']) {
       const dir = path.join(root, 'docs', locale); fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'installation.md'), `Use ${snapshot}`);
       fs.writeFileSync(path.join(dir, 'documentation-guide.md'), `Deploy stable ${stable}`);
+      fs.writeFileSync(path.join(dir, 'upgrade.md'), `From the line before to ${stable}`);
       fs.writeFileSync(path.join(dir, 'changelog.md'), `# Changes\n\n## ${snapshot} (${locale === 'ko' ? '미출시' : 'Unreleased'})\n\nFixed behavior.\n`);
     }
     const script = path.resolve('scripts/set-project-version.mjs');
@@ -27,6 +28,7 @@ for (const stable of ['2.0.0', '1.1.3']) {
     for (const locale of ['en', 'ko']) {
       const dir = path.join(root, 'docs', locale);
       assert.equal(fs.readFileSync(path.join(dir, 'documentation-guide.md'), 'utf8'), `Deploy stable ${stable}`);
+      assert.equal(fs.readFileSync(path.join(dir, 'upgrade.md'), 'utf8'), `From the line before to ${stable}`);
       assert.match(fs.readFileSync(path.join(dir, 'changelog.md'), 'utf8'), new RegExp(`## ${stable.replaceAll('.', '\\.')}\\n`));
       assert.equal(fs.readFileSync(path.join(dir, 'installation.md'), 'utf8'), `Use ${development}`);
     }
