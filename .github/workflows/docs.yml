@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Checkout source
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.checkout-ref.outputs.ref }}
           fetch-depth: 0
@@ -75,14 +75,14 @@ jobs:
           ./scripts/build-docs.sh
 
       - name: Checkout gh-pages
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: gh-pages
           path: gh-pages
         continue-on-error: true
 
       - name: Checkout current navigation tooling
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           path: .docs-tooling
@@ -97,7 +97,7 @@ jobs:
         run: node .docs-tooling/scripts/prepare-docs.mjs gh-pages build-docs deploy "$FOLDER_NAME"
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4.1.0
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./deploy
