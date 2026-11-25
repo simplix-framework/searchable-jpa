@@ -1,6 +1,6 @@
 # Installation
 
-After this page Searchable JPA is on the classpath of your application. The page describes `2.1.0-SNAPSHOT`; a version ending in `-SNAPSHOT` is a development build.
+After this page Searchable JPA is on the classpath of your application. The page describes `2.1.1-SNAPSHOT`; a version ending in `-SNAPSHOT` is a development build.
 
 ## Compatibility
 
@@ -43,7 +43,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.1.0-SNAPSHOT'
+    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.1.1-SNAPSHOT'
 }
 ```
 
@@ -53,7 +53,7 @@ The token needs permission to read packages. Maven uses the same coordinates.
 <dependency>
   <groupId>dev.simplecore.searchable</groupId>
   <artifactId>spring-boot-starter-searchable-jpa</artifactId>
-  <version>2.1.0-SNAPSHOT</version>
+  <version>2.1.1-SNAPSHOT</version>
 </dependency>
 ```
 

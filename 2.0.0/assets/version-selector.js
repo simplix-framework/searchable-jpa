@@ -2,11 +2,13 @@
 (function (root, factory) {
   var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
+  else if (root.SIMPLIX_SITE) root.SimplixVersions = api; // the shared header draws the control
   else api.start(root);
 })(typeof window === 'undefined' ? globalThis : window, function () {
   'use strict';
   var releasePattern = /^\d+\.\d+\.\d+$/;
   var folderPattern = /^(?:snapshot|\d+\.\d+\.\d+(?:-SNAPSHOT)?)$/;
+  var routePattern = /^\/(en|ko)\/((?:[A-Za-z0-9_-]+\/)*)([A-Za-z0-9_-]+)?(?:\.md)?$/;
 
   function context(href) {
     var directory = new URL('./', href);
@@ -31,13 +33,12 @@
     return (snapshot ? [snapshot] : []).concat(releases);
   }
 
+  /* The page a hash names: a language, any folders under it, and a document (README when none). */
   function route(hash) {
     var value = (hash || '#/en/').replace(/^#/, '');
-    var path = value.split('?')[0];
-    var match = /^\/(en|ko)\/(?:([A-Za-z0-9_-]+)(?:\.md)?)?$/.exec(path);
+    var match = routePattern.exec(value.split('?')[0]);
     if (!match) return { hash: '#/en/', file: 'en/README.md', language: 'en' };
-    var name = match[2] || 'README';
-    return { hash: '#' + value, file: match[1] + '/' + name + '.md', language: match[1] };
+    return { hash: '#' + value, file: match[1] + '/' + match[2] + (match[3] || 'README') + '.md', language: match[1] };
   }
 
   function target(base, version, hash) {
