@@ -51,10 +51,10 @@ node scripts/doc-snippets.mjs
 
 ## 그림
 
-그림은 `scripts/figures/`의 모듈이 생성하며 SVG를 직접 고치지 않습니다. 설정은 `.claude/document-figures.json`에 있고, 그리기 라이브러리와 검사는 svg-diagrams 스킬의 `scripts/docfigures`를 사용합니다. 아래 `<skill>`은 그 스킬의 디렉터리입니다.
+그림은 `scripts/figures/`의 모듈이 생성하며 SVG를 직접 고치지 않습니다. 설정은 `scripts/figures/document-figures.json`에 있으며 파일 안의 경로는 그 폴더를 기준으로 합니다. 그리기 라이브러리와 검사는 svg-diagrams 스킬의 `scripts/docfigures`를 사용합니다. 아래 `<skill>`은 그 스킬의 디렉터리입니다.
 
 ```bash
-python3 <skill>/scripts/docfigures/build.py
+python3 <skill>/scripts/docfigures/build.py --config scripts/figures/document-figures.json
 python3 scripts/verify-figures.py <skill>/scripts/docfigures --render build/figures
 ```
 
