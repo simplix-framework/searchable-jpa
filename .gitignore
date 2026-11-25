@@ -63,3 +63,11 @@ bin/
 .cursor
 test-data
 *.log
+
+### Agent instruction files ###
+.claude/
+CLAUDE.md
+AGENTS.md
+AGENT.md
+GEMINI.md
+.codex/
