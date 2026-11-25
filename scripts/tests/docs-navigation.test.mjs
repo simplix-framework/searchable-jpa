@@ -35,23 +35,35 @@ test('navigation preserves language, document and heading within the deployment 
   assert.throws(() => navigation.target(base, '../evil', '#/ko/'));
 });
 
-test('release deployment retains snapshot, replaces same version and updates archived navigation', t => {
+test('a deployment keeps the newest release of each line and gives every version the current shell', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'searchable-docs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const put = (base, file, text) => {
+    fs.mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
+    fs.writeFileSync(path.join(base, file), text);
+  };
   const previous = path.join(root, 'previous'), built = path.join(root, 'built'), output = path.join(root, 'output');
-  const html = '<html><head></head><body><!-- Docsify core --><script src="https://cdn.test/docsify@4"></script><!-- Version selector --><script>oldSelector();</script></body></html>';
-  for (const directory of [path.join(previous, 'snapshot'), path.join(previous, '1.9.0'), path.join(previous, '1.10.0'), built]) {
-    fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, 'index.html'), html);
+  const html = '<html><head><title>Project Documentation</title></head><body>a shell of its own time</body></html>';
+  for (const directory of [path.join(previous, 'snapshot'), path.join(previous, '1.9.0'), path.join(previous, '1.10.0'), path.join(previous, '2.0.0'), built]) {
+    put(directory, 'index.html', html);
   }
-  fs.writeFileSync(path.join(previous, '1.10.0', 'obsolete.md'), 'old');
-  fs.writeFileSync(path.join(built, 'new.md'), 'new');
-  assert.deepEqual(prepareDocs({ previous, built, output, version: '1.10.0' }), { releases: ['1.10.0', '1.9.0'], snapshot: 'snapshot' });
+  put(previous, '1.10.0/obsolete.md', 'old');
+  put(previous, '2.0.0/ko/README.md', '# Home');
+  put(built, 'new.md', 'new');
+  assert.deepEqual(prepareDocs({ previous, built, output, version: '1.10.0' }), { releases: ['2.0.0', '1.10.0'], snapshot: 'snapshot' });
   assert.ok(fs.existsSync(path.join(output, 'snapshot', 'index.html')));
+  assert.ok(!fs.existsSync(path.join(output, '1.9.0')), 'an older release of a line leaves the site');
   assert.ok(!fs.existsSync(path.join(output, '1.10.0', 'obsolete.md')));
   assert.ok(fs.existsSync(path.join(output, '1.10.0', 'new.md')));
-  const archived = fs.readFileSync(path.join(output, '1.9.0', 'index.html'), 'utf8');
-  assert.ok(!archived.includes('oldSelector'));
-  assert.ok(archived.indexOf('assets/version-selector.js') < archived.indexOf('<!-- Docsify core -->'));
-  assert.match(fs.readFileSync(path.join(output, 'index.html'), 'utf8'), /location\.hash/);
+  const shell = fs.readFileSync(new URL('../../docs/index.html', import.meta.url), 'utf8');
+  for (const version of ['snapshot', '1.10.0', '2.0.0']) {
+    assert.equal(fs.readFileSync(path.join(output, version, 'index.html'), 'utf8'), shell);
+    assert.ok(fs.existsSync(path.join(output, version, 'assets', 'site', 'site.js')));
+  }
+  assert.match(fs.readFileSync(path.join(output, '2.0.0', 'assets', 'site-config.js'), 'utf8'), /SIMPLIX_FOLDER = \{"languages":\["ko"\]\}/);
+  const redirect = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+  assert.match(redirect, /location\.hash/);
+  assert.match(redirect, /\.\/2\.0\.0\//);
+  assert.match(redirect, /<title>Project Documentation<\/title>/);
   assert.throws(() => prepareDocs({ previous, built, output, version: '../outside' }));
 });

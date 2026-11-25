@@ -29,17 +29,12 @@ echo "Copying Docsify configuration files..."
 cp docs/index.html "$BUILD_DIR/"
 cp -R docs/assets "$BUILD_DIR/assets"
 cp docs/.nojekyll "$BUILD_DIR/"
-cp docs/_coverpage.md "$BUILD_DIR/"
-cp docs/_navbar.md "$BUILD_DIR/"
 
 # English is the default locale, so its sidebar also serves as the root sidebar.
 cp docs/en/_sidebar.md "$BUILD_DIR/en/"
 cp docs/en/_sidebar.md "$BUILD_DIR/_sidebar.md"
 cp docs/ko/_sidebar.md "$BUILD_DIR/ko/"
 
-# 2.5. Replace version placeholder (escape hyphens for shields.io badge)
-VERSION_ESCAPED=$(echo "$VERSION" | sed 's/-/--/g')
-sed -i.bak "s/{{VERSION}}/${VERSION_ESCAPED}/g" "$BUILD_DIR/_coverpage.md" && rm -f "$BUILD_DIR/_coverpage.md.bak"
 
 # 3. Copy all documentation and image assets for each locale
 echo "Copying documentation files..."

@@ -87,6 +87,7 @@ jobs:
           ref: master
           path: .docs-tooling
           sparse-checkout: |
+            docs/index.html
             docs/assets
             scripts/prepare-docs.mjs
           sparse-checkout-cone-mode: false

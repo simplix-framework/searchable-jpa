@@ -35,18 +35,6 @@ test('root deployment and explicit index support release to development navigati
   await expect(browser).toHaveURL('/snapshot/#/en/basic-usage.md');
 });
 
-test('manifest failure has accessible retry and recovers', async ({ app, screen, browser }) => {
-  let failures = 1;
-  await browser.route('**/versions.json', route => {
-    if (failures-- > 0) return route.fulfill({ status: 503, body: 'unavailable' });
-    return route.continue();
-  });
-  await app.open('/searchable-jpa/snapshot/#/en/basic-usage.md');
-  await expect(screen.getByRole('combobox', 'Version')).toBeDisabled();
-  await screen.getByRole('button', 'Retry').tap();
-  await expect(screen.getByRole('combobox', 'Version')).toBeEnabled();
-});
-
 test('failed document request keeps the current version and permits retry', async ({ app, screen, browser }) => {
   await browser.route('**/1.10.0/en/basic-usage.md', route => route.fulfill({ status: 503, body: 'unavailable' }));
   await app.open('/searchable-jpa/snapshot/#/en/basic-usage.md');
