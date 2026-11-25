@@ -35,9 +35,13 @@ bin/
 *.hprof
 *.log
 
-### Claude Code ###
+### Agent instruction files ###
 .claude/
 CLAUDE.md
+AGENTS.md
+AGENT.md
+GEMINI.md
+.codex/
 
 ### Cursor ###
 .cursorrules

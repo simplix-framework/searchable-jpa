@@ -22,15 +22,17 @@ def main(argv):
     parser.add_argument('prefixes', nargs='*', help='figure name prefixes to check')
     args = parser.parse_args(argv)
 
-    settings = json.loads((ROOT / '.claude' / 'document-figures.json').read_text(encoding='utf-8'))
+    # The paths of the settings file are relative to the folder it is in.
+    base = ROOT / 'scripts' / 'figures'
+    settings = json.loads((base / 'document-figures.json').read_text(encoding='utf-8'))
     locales = json.loads((ROOT / 'scripts' / 'docs-config.json').read_text(encoding='utf-8'))['locales']
     verify = Path(args.library) / 'verify.py'
     failed = 0
     for locale in locales:
         per_locale = dict(settings)
-        per_locale['out'] = str(ROOT / settings['out'] / locale / '_images')
-        per_locale['modules'] = [str(ROOT / pattern) for pattern in settings['modules']]
-        per_locale['helpers'] = [str(ROOT / pattern) for pattern in settings.get('helpers', [])]
+        per_locale['out'] = str((base / settings['out']).resolve() / locale / '_images')
+        per_locale['modules'] = [str(base / pattern) for pattern in settings['modules']]
+        per_locale['helpers'] = [str(base / pattern) for pattern in settings.get('helpers', [])]
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / 'document-figures.json'
             config.write_text(json.dumps(per_locale), encoding='utf-8')
