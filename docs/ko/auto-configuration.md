@@ -45,7 +45,7 @@ searchable:
     auto-fetch-collections: true
     default-batch-fetch-size: 100
     jdbc-batch-size: 1000
-    order-inserts: true
+    order-inserts: false
     order-updates: true
     in-clause-parameter-padding: true
 ```
@@ -77,7 +77,7 @@ searchable:
 | `searchable.hibernate.auto-fetch-collections` | true | 컬렉션 요소의 단일 연관을 자동 fetch 대상에 포함 | [연관 데이터 검색](./relationship-and-two-phase-query.md) |
 | `searchable.hibernate.default-batch-fetch-size` | 100 | Hibernate의 지연 로딩 배치 크기 | 아래 「Hibernate 기본값」 |
 | `searchable.hibernate.jdbc-batch-size` | 1000 | Hibernate의 JDBC 문장 배치 크기 | 아래 「Hibernate 기본값」 |
-| `searchable.hibernate.order-inserts` | true | JDBC 배치를 위한 INSERT 정렬 | 아래 「Hibernate 기본값」 |
+| `searchable.hibernate.order-inserts` | false | JDBC 배치를 위한 INSERT 정렬 | 아래 「Hibernate 기본값」 |
 | `searchable.hibernate.order-updates` | true | JDBC 배치를 위한 UPDATE 정렬 | 아래 「Hibernate 기본값」 |
 | `searchable.hibernate.in-clause-parameter-padding` | true | IN 파라미터 수를 맞춰 쿼리 플랜 재사용 | 아래 「Hibernate 기본값」 |
 | `searchable.hibernate.batch-versioned-data` | true | 버전이 있는 엔티티의 수정과 삭제를 배치로 실행 | 아래 「Hibernate 기본값」 |
@@ -115,6 +115,7 @@ starter는 다음 값을 Spring Boot가 만드는 `EntityManagerFactory`의 속�
 | `in-clause-parameter-padding` | `hibernate.query.in_clause_parameter_padding` |
 
 - `auto-optimization: false`는 이 기본값만 끕니다. 검증, 페이지 제한, 시간대 설정은 계속 적용합니다.
+- `order-inserts`의 기본값은 꺼짐입니다. Hibernate는 flush의 INSERT 순서를 각 행이 참조하는 엔티티 인스턴스로 정합니다. 부모를 id 열로만 지정하고 저장 가능한 연관 관계를 두지 않은 엔티티는 Hibernate가 순서를 정할 근거가 없어, 부모 행보다 먼저 저장되고 외래 키 제약에 걸립니다. 모든 부모를 연관 관계로 참조하는 경우에 이 설정을 켜세요.
 - starter는 `hibernate.connection.provider_disables_autocommit`을 설정하지 않습니다. 이 속성은 데이터소스의 자동 커밋 동작을 보증하는 값이어서, 잘못 켜면 롤백해야 할 쓰기를 커밋할 수 있습니다.
 - JDBC 배치 크기는 SQL 문을 묶어 보내는 단위이고 `searchable.write.chunk-size`는 엔티티를 읽는 단위입니다. 서로 영향을 주지 않습니다.
 

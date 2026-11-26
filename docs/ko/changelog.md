@@ -1,5 +1,9 @@
 # 변경 사항
 
+## 1.2.2
+
+- `searchable.hibernate.order-inserts`의 기본값을 꺼짐으로 바꿨습니다. INSERT를 정렬하면, 부모를 id 열로만 지정하고 저장 가능한 연관 관계를 두지 않은 엔티티가 부모보다 먼저 저장될 수 있었습니다. 이전처럼 정렬하려면 `true`로 설정하세요.
+
 ## 1.2.0
 
 - CONTAINS · STARTS_WITH · ENDS_WITH가 대소문자를 구분하지 않게 하는 `searchable.pattern-matching.case-insensitive` 설정을 추가했습니다. 기본값은 꺼져 있습니다.

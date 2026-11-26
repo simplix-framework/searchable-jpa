@@ -54,7 +54,7 @@ class SearchableJpaConfigurationTest {
                     .containsEntry("hibernate.default_batch_fetch_size", "100")
                     .containsEntry("hibernate.jdbc.batch_size", "1000")
                     .containsEntry("hibernate.jdbc.batch_versioned_data", "true")
-                    .containsEntry("hibernate.order_inserts", "true")
+                    .containsEntry("hibernate.order_inserts", "false")
                     .containsEntry("hibernate.order_updates", "true")
                     .containsEntry("hibernate.query.in_clause_parameter_padding", "true")
                     .doesNotContainKey("hibernate.connection.provider_disables_autocommit");
@@ -78,6 +78,13 @@ class SearchableJpaConfigurationTest {
         runner.run(context -> assertThat(customized(context, Map.of("hibernate.jdbc.batch_size", "500")))
                 .containsEntry("hibernate.jdbc.batch_size", "500")
                 .containsEntry("hibernate.default_batch_fetch_size", "100"));
+    }
+
+    @Test
+    @DisplayName("8-2: order-inserts=true turns ordered inserts on")
+    void orderInsertsCanBeEnabled() {
+        runner.withPropertyValues("searchable.hibernate.order-inserts=true").run(context ->
+                assertThat(customized(context, Map.of())).containsEntry("hibernate.order_inserts", "true"));
     }
 
     // ---- 8-3: invalid batch sizes fail fast at startup ----

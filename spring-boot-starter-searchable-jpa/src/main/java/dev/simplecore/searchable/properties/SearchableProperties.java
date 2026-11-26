@@ -183,9 +183,11 @@ public class SearchableProperties {
         private boolean batchVersionedData = true;
         
         /**
-         * Enable order inserts optimization.
+         * Enable order inserts optimization. Off by default: Hibernate orders the inserts of a flush
+         * by the entity instances a row references, so an entity that names its parent by an id
+         * column, without an insertable association to it, can be written before that parent.
          */
-        private boolean orderInserts = true;
+        private boolean orderInserts = false;
         
         /**
          * Enable order updates optimization.

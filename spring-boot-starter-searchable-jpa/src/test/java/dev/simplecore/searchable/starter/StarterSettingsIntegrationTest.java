@@ -47,7 +47,7 @@ class StarterSettingsIntegrationTest {
         assertThat(entityManagerFactory.getProperties())
                 .containsEntry("hibernate.jdbc.batch_size", "77")
                 .containsEntry("hibernate.default_batch_fetch_size", "100")
-                .containsEntry("hibernate.order_inserts", "true");
+                .containsEntry("hibernate.order_inserts", "false");
     }
 
     @Test
