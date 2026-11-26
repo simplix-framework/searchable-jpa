@@ -12,7 +12,7 @@ Searching, sorting and paging for Spring Data JPA, controlled by a DTO: an appli
 | 1.x | 3.2.x-3.5.x | `spring-boot-3x` |
 | 0.1.x | 2.7.x | `spring-boot-2x` (unmaintained) |
 
-This tree builds **2.1.2**, tested with Java 17, 21 and 25, Spring Boot 4.1.2 and Hibernate 7.4.14.Final. Keep all library modules on the same version.
+This tree builds **2.1.3-SNAPSHOT**, tested with Java 17, 21 and 25, Spring Boot 4.1.2 and Hibernate 7.4.14.Final. Keep all library modules on the same version.
 
 ## Quick start
 
@@ -20,7 +20,7 @@ Add the starter. Published versions come from GitHub Packages; [Installation](do
 
 ```groovy
 dependencies {
-    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.1.2'
+    implementation 'dev.simplecore.searchable:spring-boot-starter-searchable-jpa:2.1.3-SNAPSHOT'
 }
 ```
 
