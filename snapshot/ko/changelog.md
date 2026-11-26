@@ -1,5 +1,9 @@
 # 변경 사항
 
+## 2.1.2
+
+- `searchable.hibernate.order-inserts`의 기본값을 꺼짐으로 바꿨습니다. INSERT를 정렬하면, 부모를 id 열로만 지정하고 저장 가능한 연관 관계를 두지 않은 엔티티가 부모보다 먼저 저장될 수 있었습니다. 이전처럼 정렬하려면 `true`로 설정하세요.
+
 ## 2.1.0
 
 - CONTAINS · STARTS_WITH · ENDS_WITH가 대소문자를 구분하지 않게 하는 `searchable.pattern-matching.case-insensitive` 설정을 추가했습니다. 기본값은 꺼져 있습니다.
@@ -63,7 +67,7 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
 이전 버전과 호환되지 않는 변경을 포함합니다.
 
 #### 호환성이 깨지는 변경
-- **예외 계층 통합** [`622d7f6`](https://github.com/simplix-framework/searchable-jpa/commit/622d7f6)
+- **예외 계층 통합** [`7ac21bf`](https://github.com/simplix-framework/searchable-jpa/commit/7ac21bf)
   - `SearchableValidationException`과 `SearchableParseException`이 `SearchableException`(RuntimeException)만 상속
   - `jakarta.validation.ValidationException` 상속 제거
   - `SearchableException` 아래 `SearchableConfigurationException`, `SearchableValidationException`, `SearchableOperationException`, `SearchableJoinException`, `SearchableParseException` 5종 유지
@@ -85,31 +89,31 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
 - OpenAPI: IN/NOT_IN/BETWEEN 스키마에서 enum 값 유지, BETWEEN 예제의 상한/하한을 다른 값으로 생성, 상속 필드 문서화, 배열 타입 스키마 NPE 방어, 날짜/시간 파라미터에 타입별 `format`(date/partial-time/date-time) 부여
 
 ### v1.0.11
-- `SearchableServiceDelegate`/`SearchableServiceSupport` 도입 ([`194f6e7`](https://github.com/simplix-framework/searchable-jpa/commit/194f6e7))
+- `SearchableServiceDelegate`/`SearchableServiceSupport` 도입 ([`a2aeb3a`](https://github.com/simplix-framework/searchable-jpa/commit/a2aeb3a))
   - `DefaultSearchableService`를 상속할 수 없는 서비스도 위임(composition) 방식으로 사용 가능
   - `SearchableServiceDelegate`가 검색/정렬/페이지네이션 로직을 담당하고, `SearchableServiceSupport`는 이를 연결하는 믹스인 인터페이스로 동작
 
 ### v1.0.10
-- 과도한 info/debug 로그를 trace 레벨로 전환 ([`94f5fed`](https://github.com/simplix-framework/searchable-jpa/commit/94f5fed))
+- 과도한 info/debug 로그를 trace 레벨로 전환 ([`25c5ec9`](https://github.com/simplix-framework/searchable-jpa/commit/25c5ec9))
 
 ### v1.0.9
-- OpenAPI 문서 출력 간소화로 응답 크기 축소 ([`b9af1cb`](https://github.com/simplix-framework/searchable-jpa/commit/b9af1cb))
-- Context7 문서 색인 연동 설정 추가 ([`291609a`](https://github.com/simplix-framework/searchable-jpa/commit/291609a))
+- OpenAPI 문서 출력 간소화로 응답 크기 축소 ([`bf5211d`](https://github.com/simplix-framework/searchable-jpa/commit/bf5211d))
+- Context7 문서 색인 연동 설정 추가 ([`a1680ad`](https://github.com/simplix-framework/searchable-jpa/commit/a1680ad))
 
 ### v1.0.8
-- `orXXX()` 연산자와 중첩 그룹 조건이 사라지던 문제 수정 ([`9378984`](https://github.com/simplix-framework/searchable-jpa/commit/9378984))
-- 엔티티 메타데이터 캐싱 추가로 성능 개선 ([`8f21b7d`](https://github.com/simplix-framework/searchable-jpa/commit/8f21b7d))
+- `orXXX()` 연산자와 중첩 그룹 조건이 사라지던 문제 수정 ([`4bf103d`](https://github.com/simplix-framework/searchable-jpa/commit/4bf103d))
+- 엔티티 메타데이터 캐싱 추가로 성능 개선 ([`39a90db`](https://github.com/simplix-framework/searchable-jpa/commit/39a90db))
 
 ### v1.0.7
-- OpenAPI 예제 값 생성 시 날짜/시간 값을 고정값으로 사용하도록 수정 ([`a6c8479`](https://github.com/simplix-framework/searchable-jpa/commit/a6c8479))
-- 로그와 문서에서 이모지 제거 ([`11893e6`](https://github.com/simplix-framework/searchable-jpa/commit/11893e6), [`bab39bd`](https://github.com/simplix-framework/searchable-jpa/commit/bab39bd))
+- OpenAPI 예제 값 생성 시 날짜/시간 값을 고정값으로 사용하도록 수정 ([`217dd95`](https://github.com/simplix-framework/searchable-jpa/commit/217dd95))
+- 로그와 문서에서 이모지 제거 ([`35544f1`](https://github.com/simplix-framework/searchable-jpa/commit/35544f1), [`8ef44ca`](https://github.com/simplix-framework/searchable-jpa/commit/8ef44ca))
 
 ### v1.0.6
-- `OpenApiDocUtils`에 `LocalDate`/`LocalTime` 지원 추가 ([`089ef98`](https://github.com/simplix-framework/searchable-jpa/commit/089ef98))
-- 상세 디버그 로그를 trace 레벨로 전환 ([`ad4c9a4`](https://github.com/simplix-framework/searchable-jpa/commit/ad4c9a4))
+- `OpenApiDocUtils`에 `LocalDate`/`LocalTime` 지원 추가 ([`ec438bf`](https://github.com/simplix-framework/searchable-jpa/commit/ec438bf))
+- 상세 디버그 로그를 trace 레벨로 전환 ([`3edbe19`](https://github.com/simplix-framework/searchable-jpa/commit/3edbe19))
 
 ### v1.0.5
-- 명시적 `fetchFields` 지원 추가 ([`9a177a7`](https://github.com/simplix-framework/searchable-jpa/commit/9a177a7))
+- 명시적 `fetchFields` 지원 추가 ([`82daca0`](https://github.com/simplix-framework/searchable-jpa/commit/82daca0))
   - `SearchCondition`에 `fetchFields` 속성 추가
   - Lazy 로딩된 관계를 명시적으로 Fetch Join 가능
   - 중첩 경로 지원 (예: `author.profile`)
@@ -117,18 +121,17 @@ Boot 4와 Boot 3 계열에 같은 오류 수정을 적용하며 각 계열의 �
   - [상세 문서](/ko/relationship-and-two-phase-query.md#명시적-fetch-join-fetchfields)
 
 ### v1.0.4
-- Docsify 기반 한국어 문서 사이트 구축 ([`4723c7a`](https://github.com/simplix-framework/searchable-jpa/commit/4723c7a), [`2c9bb11`](https://github.com/simplix-framework/searchable-jpa/commit/2c9bb11), [`147597b`](https://github.com/simplix-framework/searchable-jpa/commit/147597b))
-- OpenAPI 예제 값 생성 로직의 예외 상황 처리 개선 ([`ac01315`](https://github.com/simplix-framework/searchable-jpa/commit/ac01315))
+- Docsify 기반 한국어 문서 사이트 구축 ([`7732a1e`](https://github.com/simplix-framework/searchable-jpa/commit/7732a1e), [`9cbe95f`](https://github.com/simplix-framework/searchable-jpa/commit/9cbe95f), [`1a10831`](https://github.com/simplix-framework/searchable-jpa/commit/1a10831))
+- OpenAPI 예제 값 생성 로직의 예외 상황 처리 개선 ([`c85a582`](https://github.com/simplix-framework/searchable-jpa/commit/c85a582))
 
 ### v1.0.3
-- JSON 타입 필드 검색 지원 추가 ([`ab55fa9`](https://github.com/simplix-framework/searchable-jpa/commit/ab55fa9))
-- 커밋 메시지 작성 가이드에 AI 서명 제외 규칙 추가 ([`73ad2df`](https://github.com/simplix-framework/searchable-jpa/commit/73ad2df))
+- JSON 타입 필드 검색 지원 추가 ([`86fdcb8`](https://github.com/simplix-framework/searchable-jpa/commit/86fdcb8))
 
 ### v1.0.2
 - 버전 번호만 올린 릴리스로 별도 변경 사항 없음
 
 ### v1.0.1
-- `SearchConditionBuilder` 확장(상속) 지원 추가 ([`034ded0`](https://github.com/simplix-framework/searchable-jpa/commit/034ded0))
+- `SearchConditionBuilder` 확장(상속) 지원 추가 ([`2ae76d0`](https://github.com/simplix-framework/searchable-jpa/commit/2ae76d0))
 
 ### v1.0.0
 - 최초 정식 릴리스

@@ -16,7 +16,7 @@ GET /api/posts?title.contains=Spring&sort=createdAt.desc&page=0&size=20
 | 1.x | 3.2.x~3.5.x | `spring-boot-3x` | 유지보수 |
 | 0.1.x | 2.7.x | `spring-boot-2x` | 지원 종료 |
 
-이 문서는 `2.1.1-SNAPSHOT`을 기준으로 작성했습니다. Java 17 이상, Spring Boot 4.1.2, Hibernate 7.4.14.Final에서 빌드합니다. 사용하는 의존성 버전에 맞는 문서 버전을 선택하세요.
+이 문서는 `2.1.2-SNAPSHOT`을 기준으로 작성했습니다. Java 17 이상, Spring Boot 4.1.2, Hibernate 7.4.14.Final에서 빌드합니다. 사용하는 의존성 버전에 맞는 문서 버전을 선택하세요.
 
 ## 읽는 순서
 

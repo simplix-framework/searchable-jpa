@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.2
+
+- `searchable.hibernate.order-inserts` is off by default. With ordered inserts, an entity that names its parent by an id column, with no insertable association to it, could be written before that parent. Set it to `true` to order inserts as before.
+
 ## 2.1.0
 
 - Add `searchable.pattern-matching.case-insensitive` so CONTAINS, STARTS_WITH and ENDS_WITH can ignore case. Off by default.
@@ -63,7 +67,7 @@ This document records the notable changes to the searchable-jpa library.
 This release includes breaking changes.
 
 #### Breaking Changes
-- **Consolidated exception hierarchy** [`622d7f6`](https://github.com/simplix-framework/searchable-jpa/commit/622d7f6)
+- **Consolidated exception hierarchy** [`7ac21bf`](https://github.com/simplix-framework/searchable-jpa/commit/7ac21bf)
   - `SearchableValidationException` and `SearchableParseException` now extend only `SearchableException` (a `RuntimeException`)
   - They no longer extend `jakarta.validation.ValidationException`
   - `SearchableException` retains five subclasses: `SearchableConfigurationException`, `SearchableValidationException`, `SearchableOperationException`, `SearchableJoinException`, and `SearchableParseException`
@@ -85,31 +89,31 @@ This release includes breaking changes.
 - **OpenAPI**: preserves enum values in IN/NOT_IN/BETWEEN schemas, generates distinct upper and lower bounds for BETWEEN examples, documents inherited fields, guards array-type schema generation against NPEs, and assigns a per-type `format` (date/partial-time/date-time) to date/time parameters
 
 ### v1.0.11
-- Introduced `SearchableServiceDelegate` and `SearchableServiceSupport` ([`194f6e7`](https://github.com/simplix-framework/searchable-jpa/commit/194f6e7))
+- Introduced `SearchableServiceDelegate` and `SearchableServiceSupport` ([`a2aeb3a`](https://github.com/simplix-framework/searchable-jpa/commit/a2aeb3a))
   - Services that cannot extend `DefaultSearchableService` can now use composition instead
   - `SearchableServiceDelegate` handles the search, sort, and pagination logic, while `SearchableServiceSupport` is a mixin interface that wires it in
 
 ### v1.0.10
-- Downgraded excessive info/debug logs to trace level ([`94f5fed`](https://github.com/simplix-framework/searchable-jpa/commit/94f5fed))
+- Downgraded excessive info/debug logs to trace level ([`25c5ec9`](https://github.com/simplix-framework/searchable-jpa/commit/25c5ec9))
 
 ### v1.0.9
-- Reduced response size by simplifying OpenAPI documentation output ([`b9af1cb`](https://github.com/simplix-framework/searchable-jpa/commit/b9af1cb))
-- Added Context7 documentation indexing configuration ([`291609a`](https://github.com/simplix-framework/searchable-jpa/commit/291609a))
+- Reduced response size by simplifying OpenAPI documentation output ([`bf5211d`](https://github.com/simplix-framework/searchable-jpa/commit/bf5211d))
+- Added Context7 documentation indexing configuration ([`a1680ad`](https://github.com/simplix-framework/searchable-jpa/commit/a1680ad))
 
 ### v1.0.8
-- Fixed an issue where `orXXX()` operators and nested group conditions were dropped ([`9378984`](https://github.com/simplix-framework/searchable-jpa/commit/9378984))
-- Improved performance by adding entity metadata caching ([`8f21b7d`](https://github.com/simplix-framework/searchable-jpa/commit/8f21b7d))
+- Fixed an issue where `orXXX()` operators and nested group conditions were dropped ([`4bf103d`](https://github.com/simplix-framework/searchable-jpa/commit/4bf103d))
+- Improved performance by adding entity metadata caching ([`39a90db`](https://github.com/simplix-framework/searchable-jpa/commit/39a90db))
 
 ### v1.0.7
-- Fixed OpenAPI example generation to use fixed date/time values ([`a6c8479`](https://github.com/simplix-framework/searchable-jpa/commit/a6c8479))
-- Removed emojis from logs and documentation ([`11893e6`](https://github.com/simplix-framework/searchable-jpa/commit/11893e6), [`bab39bd`](https://github.com/simplix-framework/searchable-jpa/commit/bab39bd))
+- Fixed OpenAPI example generation to use fixed date/time values ([`217dd95`](https://github.com/simplix-framework/searchable-jpa/commit/217dd95))
+- Removed emojis from logs and documentation ([`35544f1`](https://github.com/simplix-framework/searchable-jpa/commit/35544f1), [`8ef44ca`](https://github.com/simplix-framework/searchable-jpa/commit/8ef44ca))
 
 ### v1.0.6
-- Added `LocalDate`/`LocalTime` support to `OpenApiDocUtils` ([`089ef98`](https://github.com/simplix-framework/searchable-jpa/commit/089ef98))
-- Downgraded verbose debug logs to trace level ([`ad4c9a4`](https://github.com/simplix-framework/searchable-jpa/commit/ad4c9a4))
+- Added `LocalDate`/`LocalTime` support to `OpenApiDocUtils` ([`ec438bf`](https://github.com/simplix-framework/searchable-jpa/commit/ec438bf))
+- Downgraded verbose debug logs to trace level ([`3edbe19`](https://github.com/simplix-framework/searchable-jpa/commit/3edbe19))
 
 ### v1.0.5
-- Added explicit `fetchFields` support ([`9a177a7`](https://github.com/simplix-framework/searchable-jpa/commit/9a177a7))
+- Added explicit `fetchFields` support ([`82daca0`](https://github.com/simplix-framework/searchable-jpa/commit/82daca0))
   - Added a `fetchFields` property to `SearchCondition`
   - Lets you explicitly fetch-join lazily loaded relationships
   - Supports nested paths (for example, `author.profile`)
@@ -117,18 +121,17 @@ This release includes breaking changes.
   - [Full details](/en/relationship-and-two-phase-query.md#explicit-fetch-join-fetchfields)
 
 ### v1.0.4
-- Built a Docsify-based Korean documentation site ([`4723c7a`](https://github.com/simplix-framework/searchable-jpa/commit/4723c7a), [`2c9bb11`](https://github.com/simplix-framework/searchable-jpa/commit/2c9bb11), [`147597b`](https://github.com/simplix-framework/searchable-jpa/commit/147597b))
-- Improved exception handling in the OpenAPI example generation logic ([`ac01315`](https://github.com/simplix-framework/searchable-jpa/commit/ac01315))
+- Built a Docsify-based Korean documentation site ([`7732a1e`](https://github.com/simplix-framework/searchable-jpa/commit/7732a1e), [`9cbe95f`](https://github.com/simplix-framework/searchable-jpa/commit/9cbe95f), [`1a10831`](https://github.com/simplix-framework/searchable-jpa/commit/1a10831))
+- Improved exception handling in the OpenAPI example generation logic ([`c85a582`](https://github.com/simplix-framework/searchable-jpa/commit/c85a582))
 
 ### v1.0.3
-- Added support for searching JSON-typed fields ([`ab55fa9`](https://github.com/simplix-framework/searchable-jpa/commit/ab55fa9))
-- Added a rule to the commit message guidelines excluding AI signatures ([`73ad2df`](https://github.com/simplix-framework/searchable-jpa/commit/73ad2df))
+- Added support for searching JSON-typed fields ([`86fdcb8`](https://github.com/simplix-framework/searchable-jpa/commit/86fdcb8))
 
 ### v1.0.2
 - Version-number-only release with no other changes
 
 ### v1.0.1
-- Added support for extending (subclassing) `SearchConditionBuilder` ([`034ded0`](https://github.com/simplix-framework/searchable-jpa/commit/034ded0))
+- Added support for extending (subclassing) `SearchConditionBuilder` ([`2ae76d0`](https://github.com/simplix-framework/searchable-jpa/commit/2ae76d0))
 
 ### v1.0.0
 - First stable release
