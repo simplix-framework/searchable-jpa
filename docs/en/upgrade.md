@@ -2,6 +2,14 @@
 
 Changes in behavior and removed API to check when moving to a newer version. The [Changelog](./changelog.md) holds everything a version changed.
 
+## From 2.1.1 to 2.1.2
+
+### Changed behavior
+
+| Area | 2.1.1 | 2.1.2 |
+| --- | --- | --- |
+| `searchable.hibernate.order-inserts` | On by default | Off by default. Set it to `true` when every parent is referenced through an association and you want inserts grouped for JDBC batching |
+
 ## From 2.0.x to 2.1.0
 
 ### Changed behavior

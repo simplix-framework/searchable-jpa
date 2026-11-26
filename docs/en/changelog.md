@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.2
+
+- `searchable.hibernate.order-inserts` is off by default. With ordered inserts, an entity that names its parent by an id column, with no insertable association to it, could be written before that parent. Set it to `true` to order inserts as before.
+
 ## 2.1.0
 
 - Add `searchable.pattern-matching.case-insensitive` so CONTAINS, STARTS_WITH and ENDS_WITH can ignore case. Off by default.

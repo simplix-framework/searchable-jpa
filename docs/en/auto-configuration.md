@@ -45,7 +45,7 @@ searchable:
     auto-fetch-collections: true
     default-batch-fetch-size: 100
     jdbc-batch-size: 1000
-    order-inserts: true
+    order-inserts: false
     order-updates: true
     in-clause-parameter-padding: true
 ```
@@ -77,7 +77,7 @@ searchable:
 | `searchable.hibernate.auto-fetch-collections` | true | Includes single associations of collection elements in the automatic fetch | [Searching related data](./relationship-and-two-phase-query.md) |
 | `searchable.hibernate.default-batch-fetch-size` | 100 | The lazy-loading batch size of Hibernate | "Hibernate defaults" below |
 | `searchable.hibernate.jdbc-batch-size` | 1000 | The JDBC statement batch size of Hibernate | "Hibernate defaults" below |
-| `searchable.hibernate.order-inserts` | true | Orders inserts for JDBC batching | "Hibernate defaults" below |
+| `searchable.hibernate.order-inserts` | false | Orders inserts for JDBC batching | "Hibernate defaults" below |
 | `searchable.hibernate.order-updates` | true | Orders updates for JDBC batching | "Hibernate defaults" below |
 | `searchable.hibernate.in-clause-parameter-padding` | true | Pads IN parameter lists so query plans are reused | "Hibernate defaults" below |
 | `searchable.hibernate.batch-versioned-data` | true | Deprecated. Hibernate 7 does not read the setting, so it has no effect | [Upgrade guide](./upgrade.md) |
@@ -114,6 +114,7 @@ With `auto-optimization` on, these properties are added only where the applicati
 | `in-clause-parameter-padding` | `hibernate.query.in_clause_parameter_padding` |
 
 - `auto-optimization: false` turns off these defaults only. Validation, page limits and the time zone stay active.
+- `order-inserts` is off by default. Hibernate orders the inserts of a flush by the entity instances a row references. An entity that names its parent by an id column, with no insertable association to it, gives Hibernate nothing to order by, so its row can be written before the parent's and the foreign key refuses it. Turn the setting on when every parent is referenced through an association.
 - The starter does not set `hibernate.connection.provider_disables_autocommit`. The property asserts how the datasource handles auto-commit, and turning it on wrongly can commit writes that should roll back.
 - The JDBC batch size groups SQL statements and `searchable.write.chunk-size` groups the entities that are read. Neither affects the other.
 
